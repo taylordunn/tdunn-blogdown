@@ -1,0 +1,311 @@
+---
+title: 'Paper review: Adjusted age-specific case fatality ratio during the COVID-19
+  epidemic'
+author: Taylor Dunn
+date: '2020-03-08'
+slug: paper-review-covid-19-epidemic
+categories: []
+tags: []
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+library(tidyverse)
+library(here)
+library(readxl)
+library(glue)
+library(patchwork)
+
+# Set ggplot2 theme and defaults
+theme_set(cowplot::theme_cowplot())
+ggp <- function(...) ggplot(...) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+
+This post is a re-creation of the 2020 preprint [@Riou2020].
+
+* The PDF is  available
+[here](https://www.medrxiv.org/content/10.1101/2020.03.04.20031104v1.full.pdf).
+* Data and code are availalbe [here](https://github.com/jriou/covid_adjusted_cfr).
+* Andrew Gelman's blog post on the paper is
+[here](https://statmodeling.stat.columbia.edu/2020/03/07/coronavirus-age-specific-fatality-ratio-estimated-using-stan/).
+
+Import the data:
+
+```{r}
+confirmed_cases <-
+  read_csv(
+    "https://raw.githubusercontent.com/jriou/covid_adjusted_cfr/master/data/confirmed_cases.csv"
+  )
+japan_clean <-
+  read_csv(
+    "https://raw.githubusercontent.com/jriou/covid_adjusted_cfr/master/data/japan_clean.csv"
+  )
+age_structure <-
+  readxl::read_xlsx(
+    here("data", "age_structure.xlsx")
+  )
+```
+
+
+# Introduction
+
+* Overall case fatality ratio (CFR): the proportion of all (asymptomatic and symptomatic) infected cases that will die as a result of the disease.
+* A crude CFR of 2.3% was estimated based on 1023 deaths out of 44672 confirmed cases.
+* Difficult to interpret due to
+    * likely under-ascertainment of mild or asymptomatic cases and
+    * right-censoring of cases with respect to the time delay from illness onset to death.
+* Other analyses have reported estimates of 7.2%, 5.3%, 18%, and 1%.
+* The authors attempted to fit a dynamic transmission model to reported data of confirmed cases and deaths in Hubei. They obtained adjusted and age-specific estimates of the overall CFR of COVID-19 among both symptomatic and asymptomatic patients in the Hubei province until 11 February 2020.
+
+# The COVID-19 epidemic in Hubei, China
+
+>Human-to-human transmission occured at a high rate in Wuhan and other areas of the Hubei province, leading to an exponential growth of incidence (Figure 1A).
+
+To re-create Figure 1, we use the provided `confirmed_cases` data:
+
+```{r}
+head(confirmed_cases)
+```
+
+There are four count variables: `confirmed_cases_china`, `confirmed_cases_outside_hubei_with_link`, `confirmed_cases_outside_hubei_without_link`, and `confirmed_cases_hubei`.
+Create a `date` type object, and plot the counts:
+
+```{r fig.width=8}
+confirmed_cases  <-
+  confirmed_cases %>%
+  mutate(
+    date = as.Date(
+      glue("{year}-{month}-{day}")      
+    )
+  )
+confirmed_cases %>%
+  gather(var, count, confirmed_cases_china:confirmed_cases_hubei) %>%
+  ggp(aes(x = date, y = count)) +
+  geom_col() +
+  facet_wrap(~ var, ncol = 2, scales = "free_y") +
+  scale_y_continuous(expand = expansion(c(0, 0)))
+```
+
+The extra count of deaths in Hubei come from an R query package [nCov2019](https://github.com/GuangchuangYu/nCov2019), which were hard-coded by the authors into this list:
+
+```{r}
+reported_deaths <- c(
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 2, 3, 7, 7, 14, 13,
+  21, 23, 23, 33, 38, 40, 40, 50, 56, 58, 64, 64, 76, 78, 85, 95, 85
+)
+```
+
+There are `r length(reported_deaths)` time points in the `reported_deaths` data, but the `confirmed_cases` data spans `r nrow(confirmed_cases)`.
+If we assume that these `r length(reported_deaths)` are the most recent, then they correspond to the date range 
+`r min(tail(confirmed_cases$date, length(reported_deaths)))` to
+`r max(confirmed_cases$date)`.
+Add this to the `confirmed_cases` data, and fill for earlier dates:
+
+```{r}
+confirmed_cases <-
+  confirmed_cases %>%
+  left_join(
+    tibble(
+      reported_deaths = reported_deaths,
+      date = seq.Date(
+        min(tail(confirmed_cases$date, length(reported_deaths))),
+        max(confirmed_cases$date),
+        "days"
+      )
+    ),
+    by = "date"
+  ) %>%
+  mutate(reported_deaths = replace_na(reported_deaths, 0))
+```
+
+Note that this corresponds to the first death occuring on `r min(filter(confirmed_cases, reported_deaths > 0)$date)`, but the first was reported to occur on
+[January 9th in Wuhan](https://www.straitstimes.com/asia/east-asia/china-reports-first-death-in-wuhan-pneumonia-outbreak).
+
+Create Figure 1A with the `confirmed_cases_hubei` variable:
+
+```{r fig1a}
+fig1a <-
+  confirmed_cases %>%
+  ggp(aes(x = date, y = confirmed_cases_hubei)) +
+  geom_col(color = "black") +
+  geom_col(aes(y = reported_deaths), fill = "firebrick", color = "black") +
+  geom_vline(xintercept = as.Date("2020-01-20"), lty = 2, size = 1) + 
+  geom_vline(xintercept = max(confirmed_cases$date), lty = 2, size = 1) + 
+  scale_y_continuous("N", limits = c(0, 3000),
+                     expand = expansion(c(0, 0))) +
+  labs(x = "Time")
+fig1a
+```
+
+To construct the three subplots for Figure 1B, we use hard-coded data, binned by age, from the
+[worldometer](https://www.worldometers.info/demographics/china-demographics/) and 
+[Chinese CDC Weekly](https://github.com/jriou/covid_adjusted_cfr/blob/master/data/chineseCDC2020.pdf):
+
+```{r fig1b}
+fig1b_data <-
+  tibble(
+    age_range = factor(
+      c(
+        "0-9", "10-19", "20-29", "30-39", "40-49",
+        "50-59", "60-69", "70-79", "80+"
+      ),
+      ordered = T
+    )
+  ) %>%
+  # Chinese age_distribution from worldometer
+  bind_cols(
+    `Chinese population` = c(
+      83932437 + 86735183,
+      84262751 + 82341859,
+      87158167+ 97989003,
+      128738970 + 100091455, 
+      96274146 + 119837617,
+      123445382 + 98740491,
+      77514139 + 74149766,
+      44949689 + 26544616,
+      16181417 + 7581777 + 2305024 + 475193 + 74692
+    )
+  ) %>%
+  # Confirmed cases from CDC
+  bind_cols(
+    `Confirmed cases` = c(
+      416, 549, 3619, 7600, 8571, 10008, 8583, 3918, 1408
+    )
+  ) %>%
+  # Reported deaths from CDC
+  bind_cols(
+    `Reported deaths` = c(
+      0, 1, 7, 18, 38, 130, 309, 312, 208
+    )
+  ) %>%
+  gather(var, count, -age_range) %>%
+  group_by(var) %>%
+  mutate(prop = count / sum(count))
+fig1b <- fig1b_data %>%
+  ggp(aes(y = age_range, x = prop)) +
+  geom_col() +
+  facet_wrap(~var) +
+  scale_x_continuous("Proportion", labels = scales::percent,
+                     expand = expansion(c(0, 0))) +
+  scale_y_discrete(NULL, expand = expansion(c(0, 0)))
+fig1b
+```
+
+Data for Figure 1C come from the [Japanese National Institute of Infectious Diseases](https://www.niid.go.jp/niid/en/2019-ncov-e/9407-covid-dp-fe-01.html), and a cleaned version of the data (`japan_clean`) was provided by the authors:
+
+```{r}
+japan_clean
+```
+
+The `age` variable has some non-numeric variables: `r glue_collapse(unique(japan_clean$age[is.na(as.numeric(japan_clean$age))]), sep = " and ")`.
+The data are already seemingly binned into decades (values of 10, 20, 30, etc.), but we will re-label to match the figure (values of 10-19, 20-29, 30-39, etc.):
+
+```{r warning=FALSE}
+japan_clean <- 
+  japan_clean %>%
+  mutate(
+    # Impute as the midpoint
+    age = as.numeric(str_replace(age, "0-10", "5"))
+  ) %>%
+  mutate(
+    age_range = cut(
+      age,
+      breaks = c(0, 9, 19, 29, 39, 49, 59, 69, 79, 100),
+      labels = levels(fig1b_data$age_range)
+    )
+  )
+```
+
+This cleaned data doesn't have the sympomatic status, however.
+Looking through the [source code](https://github.com/jriou/covid_adjusted_cfr/blob/master/output_paper.R), I found the following hard-coded values for the Diamond Pricess ship:
+
+```{r}
+diamond_symptoms <-
+  tibble(
+    symptomatic = c(0, 2, 25, 27, 19, 28, 76, 95, 29),
+    asymptomatic = c(1, 3, 3, 7, 8, 31, 101, 139, 25),
+    age_range = factor(levels(fig1b_data$age_range), ordered = T)
+  ) %>%
+  mutate(
+    symptomatic_prop = symptomatic / (symptomatic + asymptomatic),
+    prop_inf = qbeta(0.025, symptomatic+1, asymptomatic+1),
+    prop_sup = qbeta(0.975, symptomatic+1, asymptomatic+1),
+    var = "Symptomatics"
+  )
+fig1c <-
+  diamond_symptoms %>%
+  ggp(aes(x = symptomatic_prop, y = age_range)) +
+  geom_col() +
+  geom_errorbar(aes(xmin = prop_inf, xmax = prop_sup), size = 1, width = 0.3) +
+  geom_vline(xintercept = 0.5, lty = 2, size = 1) +
+  facet_wrap(~var) +
+  scale_x_continuous("Proportion", expand = expansion(c(0, 0.02)),
+                     labels = scales::percent, limits = c(0, 1)) +
+  scale_y_discrete(NULL, expand = expansion(c(0, 0)))
+fig1c
+```
+
+Note that the credible intervals are generated using `qbeta(c(0.025, 0.975), count1, count2)`.
+
+Now we can compile all of Figure 1:
+
+```{r fig.width=8, fig.height=8}
+fig1a + fig1b + fig1c +
+  plot_layout(ncol = 1) +
+  plot_annotation(tag_levels = "A")
+```
+
+
+# An age-structured model of COVID-19 transmission and mortality
+
+An age-stratified susceptible-exposed-infected-remove (SEIR) compartmental model was used to simulate the dynamics of the epidemic with:
+
+* data from 2020-01-01 to 2020-02-11,
+* a distinction between asymptomatic and symptomatic infections,
+* age stratified into 10-year ranges (0-9 years, ..., 80+ years),
+* parameter assumptions, identical across ages):
+    * incubation period of 5.6 days,
+    * 49% of infected people develop symptoms and become infectious (the remaining are asymptomatic and do not transmit further),
+    * time from onset to removal of 2.9 days
+    
+![](/post/2020-03-08-paper-review-adjusted-age-specific-case-fatality-ratio-during-the-covid-19-epidemic_files/riou2020_figure2.png){width=800px}
+
+After 2020-02-20, transmission decrease was modeled using a sigmoid function with four parameters:
+
+* initial transmission rate,
+* decrease in transmission due to control measures,
+* time delay between implementation and effect, and
+* slope of this decrease.
+
+It was assumed that symptomatic people had an age-specific case-fatality rate and that time from onset to death followed a log-normal distribution with mean 20.2 days and SD 11.6.
+Thus, number of deaths could be estimated after 2020-02-11.
+
+The model was fitted to four data sets from the CCDC report:
+
+1. the number of confirmed cases by day of disease onset,
+2. the number of deaths by day of occurence,
+3. the age distribution of all confirmed cases, and
+4. the age distribution of all deaths.
+
+
+
+```{r}
+confirmed_cases
+```
+
+
+
+
+
+
+
+```{r}
+```
+
+
+# References
+
