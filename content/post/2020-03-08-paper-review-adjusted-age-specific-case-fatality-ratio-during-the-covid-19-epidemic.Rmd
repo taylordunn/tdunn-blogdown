@@ -33,6 +33,8 @@ This post is a re-creation of the 2020 preprint [@Riou2020].
 * Andrew Gelman's blog post on the paper is
 [here](https://statmodeling.stat.columbia.edu/2020/03/07/coronavirus-age-specific-fatality-ratio-estimated-using-stan/).
 
+The reason I'm reviewing it is because (A) COVID-19 is scary and (B) I wanted to learn more Stan, or specifically, the limits of complexity in Stan.
+
 Import the data:
 
 ```{r}
@@ -44,6 +46,7 @@ japan_clean <-
   read_csv(
     "https://raw.githubusercontent.com/jriou/covid_adjusted_cfr/master/data/japan_clean.csv"
   )
+# What is this for?
 age_structure <-
   readxl::read_xlsx(
     here("data", "age_structure.xlsx")
@@ -291,15 +294,317 @@ The model was fitted to four data sets from the CCDC report:
 3. the age distribution of all confirmed cases, and
 4. the age distribution of all deaths.
 
+Some additional assumptions and details:
 
+* assumed that all deaths were reported, 
+* assumed that all symptomatic cases among people 80+ were reported.
+* For the other age groups, the underreporting of symptomatic cases was modeled with an age-dependent reporting rate.
+* Negative binomial distributions were used to describe the number of reported cases and deaths, and
+* multinomial distributions to describe the distribution of cases and deaths over age groups.
+
+## Walking through the R code
+
+With all of this detail in mind, go step-by-step through the `run_models.R`:
+
+```{r eval=F}
+source("data_management.R")
+source("setup.R")
+
+# Model 10 ----------------------------------------------------------
+
+# get gamma from discretizing onset_to_death in Linton
+linton_mean = 20.2
+linton_sd = 11.6
+
+get_par_lnorm = function(m,s) {
+  mu = log(m) - 1/2*log((s/m)^2+1)
+  sigma = sqrt(log((s/m)^2+1))
+  return(list(mu=mu,sigma=sigma))
+}
+linton_pars = get_par_lnorm(linton_mean,linton_sd)
+```
+
+After sourcing some pre-processing files, define the parameters of the log-normal distribution of time from onset to death are defined.
+These values give us:
 
 ```{r}
-confirmed_cases
+linton_mean <- 20.2
+linton_sd <- 11.6
+
+mu <- log(linton_mean) - 0.5 * log((linton_sd / linton_mean)^2 + 1)
+sigma <- sqrt(log((linton_sd / linton_mean)^2 + 1))
+mu; sigma
+```
+
+Plot the lognormal distribution:
+
+```{r}
+tibble(
+  x = seq(0, 50, 0.1),
+  d = dlnorm(x, meanlog = mu, sdlog = sigma)
+) %>%
+  ggp(aes(x, d)) +
+  geom_line()
+```
+
+Density looks reasonable.
+If we take many random samples, we should recover the original 20.2 ± 11.6:
+
+```{r}
+tibble(
+  val = rlnorm(n = 10000, meanlog = mu, sdlog = sigma)
+) %>%
+  summarise(mean = mean(val), sd = sd(val))
+```
+
+The next bit of code uses the Linton parameters to compute 60 differences in probabilities through `plnorm`:
+
+```{r eval=F}
+gamma = numeric(60)
+for(i in 1:60) {
+  gamma[i] = plnorm(i+.5,linton_pars$mu,linton_pars$sigma)-plnorm(i-.5,linton_pars$mu,linton_pars$sigma)
+}
+gamma = gamma/sum(gamma)
+plot(density(rlnorm(1000,linton_pars$mu,linton_pars$sigma)))
+lines(gamma,col="red")
+```
+
+This `gamma` variable is the $\gamma$ variable from Figure 2: the delay from disease onset to death discretized by day.
+So I think these are probabilities of death (or $\gamma$) for 1 to 60 days from disease onset:
+
+```{r}
+tibble(
+  i = 1:60
+) %>%
+  mutate(
+    gamma = plnorm(i + 0.5, mu, sigma) - plnorm(i - 0.5, mu, sigma)
+  ) %>%
+  # Normalize
+  mutate(gamma = gamma / sum(gamma)) %>%
+  ggp(aes(i, gamma)) +
+  geom_line() +
+  labs(x = "Day from disease onset", y = expression(paste("p(", gamma, ")")))
+```
+
+```{r eval=F}
+# Format data and set priors
+data_list_model10 = list(
+  time_lag=100,
+  K=9,
+  age_dist=age_dist,
+  pop_t = pop_t,
+  t0=0,
+  t_data = t_data,
+  tmax =tmax,
+  tmax2 = tmax,
+  tswitch = tswitch,
+  S=S,
+  ts = 1:S,
+  D = D,
+  incidence_cases = incidence_cases,
+  incidence_deaths = incidence_deaths,
+  agedistr_cases = cases_tmax,
+  agedistr_deaths = mort_tmax,
+  p_beta=1,
+  p_eta=c(1,1),
+  p_pi=c(1,999),
+  p_incubation=5.6, # Incubation including WR (Linton)
+  p_infectious=2.9, # Infectious period (Liu)
+  p_psi=0.49, # Diamond princess
+  p_epsilon=c(1,1),
+  p_phi = 1/100,
+  p_rho=c(1,1),
+  p_xi=1,
+  p_nu=1/5,
+  G=60,
+  p_gamma=gamma,
+  inference=0,
+  doprint=0
+)
+```
+
+This list are the inputs to the Stan model, for which we will refer to `data_management`:
+
+```{r eval=F}
+day_start = as.Date("2019-12-30")
+day_data = as.Date("2019-12-08")
+if(day_data<=day_start) day_data = day_start + 2 # 2020-01-01
+day_tmax = as.Date("2020-02-11")
+day_tswitch = as.Date("2020-01-23")
+time_lag = 100
+
+t0 = 0
+tmax = as.numeric(day_tmax-day_start) # day 43
+S = tmax+time_lag # day 143
+ts = 1:S # days 1:143
+t_data = as.numeric(day_data-day_start) # day 2
+D = tmax-t_data+1 # 42 days
+tswitch = as.numeric(day_tswitch-day_start) # day 24
+```
+
+A bit confusing without comments.
+It seems that the "start day" (`day_start`) was different from the "data start day" (`day_data`), which evaluated to 2020-01-01 in the above code.
+
+I first thought that `day_tswitch` = 2020-01-23 refered to the "Control measures implemented" in Figure 1A, but this is actually 2020-01-20.
+Perhaps this date corresponds to the traffic restrictions, quote below:
+
+>On 20 January, Chinese authorities implemented strict control measures in the Hubei province, including contact tracing aimed at identifying , treating and isolating cases and quarantining contacts, extension of holidays, temperature checks before accessing public areas, cancellation of mass gatherings and the promotion of extreme social distancing [10]. Three days later, a cordon sanitaire was imposed, with strict traffic restrictions. From
+
+`time_lag` extends the time frame by beyond `tmax` an extra 100 days, to `r as.Date("2020-02-11") + 100`, which isn't actually plotted in Figure 3A and 3C, but maybe the axis was cutoff in April.
+
+The calculated values, as I understand them:
+
+* `tmax` is the number of days from start to `tmax` (43),
+* `S` is the total number of days considered, 100 days beyond `tmax`,
+* `ts` is a vector of those 43+100 days,
+* `t_data` is the day on which data starts being collected (day 2),
+* `D` is the number of days with data + 1 (42)
+* `tswitch` is the day on which control measures + traffic restrictions were in place (24)
+
+With that in mind, I'll use some descriptive variable names:
+
+```{r}
+start_date = as.Date("2019-12-30")
+data_start_date <- start_date + 2 # 2020-01-01
+end_date <- as.Date("2020-02-11")
+controls_date <- as.Date("2020-01-23")
+extra_days <- 100
+
+start_day <- 0
+end_day <- as.numeric(end_date - start_date) # 43
+extra_end_day <- end_day + extra_days # 143
+days <- 1:extra_end_day # 1:143
+data_start_day <- as.numeric(data_start_date - start_date) # 2
+data_days <- end_day - data_start_day + 1 # 42
+controls_day <- as.numeric(controls_date - start_date) # 24
+```
+
+Moving on:
+
+```{r eval=F}
+# Age distribution in China for 9 age classes ---------
+# (https://www.worldometers.info/demographics/china-demographics/) 
+
+age_dist<- c(
+  83932437 + 86735183,
+  84262751 + 82341859,
+  87158167+ 97989003,
+  128738970 + 100091455, 
+  96274146 + 119837617,
+  123445382 + 98740491,
+  77514139 + 74149766,
+  44949689 + 26544616,
+  16181417 + 7581777 + 2305024 + 475193 + 74692)
+age_dist<-age_dist/sum(age_dist)
+```
+
+This is the data we hard-coded earlier for Figure 1B, `fig1b_data`; specifically, the first panel of "Chinese population".
+
+```{r eval=F}
+# Population in Hubei ---------
+# (National Bureau of Statistics of China) 
+pop_t = 59020000
+```
+
+As it says in the header, this is simply the population of Hubei.
+
+```{r eval=F}
+# Case incidence in Hubei up to 2020-02-11 ---------
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+confirmed_cases = read.csv("data/confirmed_cases.csv") %>%
+  tbl_df() %>%
+  mutate(date=ymd(paste(year,month,day,sep="-"))) %>%
+  filter(date>=day_data)
+incidence_cases = pull(confirmed_cases,confirmed_cases_hubei)
+```
+
+This is the number of cases over time in Hubei, as shown in Figure 1A, but just taking data from the data start day `r data_start_date` and later.
+
+```{r eval=F}
+incidence_deaths = c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 2, 3, 7, 7, 14, 13, 21, 23, 23, 33, 38, 40, 40, 50, 56, 58, 64,
+                     64, 76, 78, 85, 95, 85)
+```
+
+These were the death counts over time in Hubei, also in Figure 1A.
+The number of hard-coded values above is 42, which is the correct number of days of data.
+
+```{r eval=F}
+# Age distribution of cases in mainland China as of 2020-02-11 --------- 
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+cases_tmax = c(416,549,3619,7600,8571,10008,8583,3918,1408)
+prop_cases_tmax = cases_tmax / sum(cases_tmax)
+
+# Age distribution of deaths in mainland China as of 2020-02-11 --------- 
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+mort_tmax = c(0,1,7,18,38,130,309,312,208)
+prop_mort_tmax = mort_tmax / sum(mort_tmax)
+```
+
+This last bit of coded is the hard-coded values for the "Confirmed cases" and "Reported deaths" panels of Figure 1B.
+
+Grab all of this data:
+
+```{r}
+chinese_age_dist <- fig1b_data %>%
+  filter(var == "Chinese population") %>%
+  pull(prop)
+hubei_population <- 59020000
+incidence_cases_hubei <- confirmed_cases %>%
+  filter(date >= data_start_date) %>%
+  pull(confirmed_cases_hubei)
+incidence_deaths_hubei <- confirmed_cases %>%
+  filter(date >= data_start_date) %>%
+  pull(reported_deaths)
+chinese_cases_dist <- fig1b_data %>%
+  filter(var == "Confirmed cases") %>%
+  pull(prop)
+chinese_deaths_dist <- fig1b_data %>%
+  filter(var == "Reported deaths") %>%
+  pull(prop)
 ```
 
 
+Now we can start commenting on some of these values:
 
-
+```{r eval=F}
+# Format data and set priors
+data_list_model10 = list(
+  time_lag=100, # extra days after tmax
+  K=9, # number of age groups
+  age_dist=age_dist,
+  pop_t = pop_t,
+  t0=0, # start time
+  t_data = t_data, # the day on which data begins (2)
+  tmax =tmax, # maximum number of days (43)
+  tmax2 = tmax, # same
+  tswitch = tswitch, # the day with control measurse + traffic restrictions (24)
+  S=S, # number of days tmax + time_lag (143)
+  ts = 1:S, # vector of those days
+  D = D, # number of days with data + 1 (42)
+  incidence_cases = incidence_cases,
+  incidence_deaths = incidence_deaths,
+  agedistr_cases = cases_tmax,
+  agedistr_deaths = mort_tmax,
+  p_beta=1,
+  p_eta=c(1,1),
+  p_pi=c(1,999),
+  p_incubation=5.6, # Incubation including WR (Linton)
+  p_infectious=2.9, # Infectious period (Liu)
+  p_psi=0.49, # Diamond princess
+  p_epsilon=c(1,1),
+  p_phi = 1/100,
+  p_rho=c(1,1),
+  p_xi=1,
+  p_nu=1/5,
+  G=60,
+  p_gamma=gamma,
+  inference=0,
+  doprint=0
+)
+```
 
 
 
