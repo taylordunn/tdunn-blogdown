@@ -20,6 +20,7 @@ bibliography: references.bib
 <li>Andrew Gelman’s blog post on the paper is
 <a href="https://statmodeling.stat.columbia.edu/2020/03/07/coronavirus-age-specific-fatality-ratio-estimated-using-stan/">here</a>.</li>
 </ul>
+<p>The reason I’m reviewing it is because (A) COVID-19 is scary and (B) I wanted to learn more Stan, or specifically, the limits of complexity in Stan.</p>
 <p>Import the data:</p>
 <pre class="r"><code>confirmed_cases &lt;-
   read_csv(
@@ -46,7 +47,8 @@ bibliography: references.bib
 ##   sex = col_character(),
 ##   date = col_date(format = &quot;&quot;)
 ## )</code></pre>
-<pre class="r"><code>age_structure &lt;-
+<pre class="r"><code># What is this for?
+age_structure &lt;-
   readxl::read_xlsx(
     here(&quot;data&quot;, &quot;age_structure.xlsx&quot;)
   )</code></pre>
@@ -273,23 +275,269 @@ fig1c</code></pre>
 <li>time delay between implementation and effect, and</li>
 <li>slope of this decrease.</li>
 </ul>
-<p>It was assumed that symptomatic people had an age-specific case-fatality rate and that time from onset to death followed a log-normal distribution with mean 20.2 days and SD 11.6:</p>
+<p>It was assumed that symptomatic people had an age-specific case-fatality rate and that time from onset to death followed a log-normal distribution with mean 20.2 days and SD 11.6.
+Thus, number of deaths could be estimated after 2020-02-11.</p>
+<p>The model was fitted to four data sets from the CCDC report:</p>
+<ol style="list-style-type: decimal">
+<li>the number of confirmed cases by day of disease onset,</li>
+<li>the number of deaths by day of occurence,</li>
+<li>the age distribution of all confirmed cases, and</li>
+<li>the age distribution of all deaths.</li>
+</ol>
+<p>Some additional assumptions and details:</p>
+<ul>
+<li>assumed that all deaths were reported,</li>
+<li>assumed that all symptomatic cases among people 80+ were reported.</li>
+<li>For the other age groups, the underreporting of symptomatic cases was modeled with an age-dependent reporting rate.</li>
+<li>Negative binomial distributions were used to describe the number of reported cases and deaths, and</li>
+<li>multinomial distributions to describe the distribution of cases and deaths over age groups.</li>
+</ul>
+<div id="walking-through-the-r-code" class="section level2">
+<h2>Walking through the R code</h2>
+<p>With all of this detail in mind, go step-by-step through the <code>run_models.R</code>:</p>
+<pre class="r"><code>source(&quot;data_management.R&quot;)
+source(&quot;setup.R&quot;)
+
+# Model 10 ----------------------------------------------------------
+
+# get gamma from discretizing onset_to_death in Linton
+linton_mean = 20.2
+linton_sd = 11.6
+
+get_par_lnorm = function(m,s) {
+  mu = log(m) - 1/2*log((s/m)^2+1)
+  sigma = sqrt(log((s/m)^2+1))
+  return(list(mu=mu,sigma=sigma))
+}
+linton_pars = get_par_lnorm(linton_mean,linton_sd)</code></pre>
+<p>After sourcing some pre-processing files, define the parameters of the log-normal distribution of time from onset to death are defined.
+These values give us:</p>
+<pre class="r"><code>linton_mean &lt;- 20.2
+linton_sd &lt;- 11.6
+
+mu &lt;- log(linton_mean) - 0.5 * log((linton_sd / linton_mean)^2 + 1)
+sigma &lt;- sqrt(log((linton_sd / linton_mean)^2 + 1))
+mu; sigma</code></pre>
+<pre><code>## [1] 2.863179</code></pre>
+<pre><code>## [1] 0.5338606</code></pre>
+<p>Plot the lognormal distribution:</p>
 <pre class="r"><code>tibble(
-  x = seq(0, 20, 0.1),
-  #dens = dlnorm(x, meanlog = log(20.2), sdlog = log(11.6))
-  dens = dlnorm(x, meanlog = 20.2, sdlog = 11.6)
+  x = seq(0, 50, 0.1),
+  d = dlnorm(x, meanlog = mu, sdlog = sigma)
 ) %&gt;%
-  ggp(aes(x = x, y = dens)) +
+  ggp(aes(x, d)) +
   geom_line()</code></pre>
-<p><img src="/post/2020-03-08-paper-review-adjusted-age-specific-case-fatality-ratio-during-the-covid-19-epidemic_files/figure-html/unnamed-chunk-10-1.png" width="672" /></p>
-<pre class="r"><code>dlnorm(seq(0,10,1), meanlog = 20.2, sdlog = 11.6)</code></pre>
-<pre><code>##  [1] 0.000000000 0.007550477 0.004181762 0.002954815 0.002307776 0.001904377
-##  [7] 0.001627262 0.001424397 0.001269046 0.001146016 0.001046014</code></pre>
-<pre class="r"><code>dlnorm(seq(0,10,1), meanlog = log(20.2), sdlog = log(11.6))</code></pre>
-<pre><code>##  [1] 0.00000000 0.07673863 0.05214721 0.04008509 0.03271257 0.02767759
-##  [7] 0.02399655 0.02117732 0.01894371 0.01712765 0.01562057</code></pre>
-<pre class="r"><code>log(exp(1))</code></pre>
-<pre><code>## [1] 1</code></pre>
+<p><img src="/post/2020-03-08-paper-review-adjusted-age-specific-case-fatality-ratio-during-the-covid-19-epidemic_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+<p>Density looks reasonable.
+If we take many random samples, we should recover the original 20.2 ± 11.6:</p>
+<pre class="r"><code>tibble(
+  val = rlnorm(n = 10000, meanlog = mu, sdlog = sigma)
+) %&gt;%
+  summarise(mean = mean(val), sd = sd(val))</code></pre>
+<pre><code>## # A tibble: 1 x 2
+##    mean    sd
+##   &lt;dbl&gt; &lt;dbl&gt;
+## 1  20.2  11.8</code></pre>
+<p>The next bit of code uses the Linton parameters to compute 60 differences in probabilities through <code>plnorm</code>:</p>
+<pre class="r"><code>gamma = numeric(60)
+for(i in 1:60) {
+  gamma[i] = plnorm(i+.5,linton_pars$mu,linton_pars$sigma)-plnorm(i-.5,linton_pars$mu,linton_pars$sigma)
+}
+gamma = gamma/sum(gamma)
+plot(density(rlnorm(1000,linton_pars$mu,linton_pars$sigma)))
+lines(gamma,col=&quot;red&quot;)</code></pre>
+<p>This <code>gamma</code> variable is the <span class="math inline">\(\gamma\)</span> variable from Figure 2: the delay from disease onset to death discretized by day.
+So I think these are probabilities of death (or <span class="math inline">\(\gamma\)</span>) for 1 to 60 days from disease onset:</p>
+<pre class="r"><code>tibble(
+  i = 1:60
+) %&gt;%
+  mutate(
+    gamma = plnorm(i + 0.5, mu, sigma) - plnorm(i - 0.5, mu, sigma)
+  ) %&gt;%
+  # Normalize
+  mutate(gamma = gamma / sum(gamma)) %&gt;%
+  ggp(aes(i, gamma)) +
+  geom_line() +
+  labs(x = &quot;Day from disease onset&quot;, y = expression(paste(&quot;p(&quot;, gamma, &quot;)&quot;)))</code></pre>
+<p><img src="/post/2020-03-08-paper-review-adjusted-age-specific-case-fatality-ratio-during-the-covid-19-epidemic_files/figure-html/unnamed-chunk-15-1.png" width="672" /></p>
+<pre class="r"><code># Format data and set priors
+data_list_model10 = list(
+  time_lag=100,
+  K=9,
+  age_dist=age_dist,
+  pop_t = pop_t,
+  t0=0,
+  t_data = t_data,
+  tmax =tmax,
+  tmax2 = tmax,
+  tswitch = tswitch,
+  S=S,
+  ts = 1:S,
+  D = D,
+  incidence_cases = incidence_cases,
+  incidence_deaths = incidence_deaths,
+  agedistr_cases = cases_tmax,
+  agedistr_deaths = mort_tmax,
+  p_beta=1,
+  p_eta=c(1,1),
+  p_pi=c(1,999),
+  p_incubation=5.6, # Incubation including WR (Linton)
+  p_infectious=2.9, # Infectious period (Liu)
+  p_psi=0.49, # Diamond princess
+  p_epsilon=c(1,1),
+  p_phi = 1/100,
+  p_rho=c(1,1),
+  p_xi=1,
+  p_nu=1/5,
+  G=60,
+  p_gamma=gamma,
+  inference=0,
+  doprint=0
+)</code></pre>
+<p>This list are the inputs to the Stan model, for which we will refer to <code>data_management</code>:</p>
+<pre class="r"><code>day_start = as.Date(&quot;2019-12-30&quot;)
+day_data = as.Date(&quot;2019-12-08&quot;)
+if(day_data&lt;=day_start) day_data = day_start + 2 # 2020-01-01
+day_tmax = as.Date(&quot;2020-02-11&quot;)
+day_tswitch = as.Date(&quot;2020-01-23&quot;)
+time_lag = 100
+
+t0 = 0
+tmax = as.numeric(day_tmax-day_start) # day 43
+S = tmax+time_lag # day 143
+ts = 1:S # days 1:143
+t_data = as.numeric(day_data-day_start) # day 2
+D = tmax-t_data+1 # 42 days
+tswitch = as.numeric(day_tswitch-day_start) # day 24</code></pre>
+<p>A bit confusing without comments.
+It seems that the “start day” (<code>day_start</code>) was different from the “data start day” (<code>day_data</code>), which evaluated to 2020-01-01 in the above code.</p>
+<p>I first thought that <code>day_tswitch</code> = 2020-01-23 refered to the “Control measures implemented” in Figure 1A, but this is actually 2020-01-20.
+Perhaps this date corresponds to the traffic restrictions, quote below:</p>
+<blockquote>
+<p>On 20 January, Chinese authorities implemented strict control measures in the Hubei province, including contact tracing aimed at identifying , treating and isolating cases and quarantining contacts, extension of holidays, temperature checks before accessing public areas, cancellation of mass gatherings and the promotion of extreme social distancing [10]. Three days later, a cordon sanitaire was imposed, with strict traffic restrictions. From</p>
+</blockquote>
+<p><code>time_lag</code> extends the time frame by beyond <code>tmax</code> an extra 100 days, to 2020-05-21, which isn’t actually plotted in Figure 3A and 3C, but maybe the axis was cutoff in April.</p>
+<p>The calculated values, as I understand them:</p>
+<ul>
+<li><code>tmax</code> is the number of days from start to <code>tmax</code> (43),</li>
+<li><code>S</code> is the total number of days considered, 100 days beyond <code>tmax</code>,</li>
+<li><code>ts</code> is a vector of those 43+100 days,</li>
+<li><code>t_data</code> is the day on which data starts being collected (day 2),</li>
+<li><code>D</code> is the number of days with data + 1 (42)</li>
+<li><code>tswitch</code> is the day on which control measures + traffic restrictions were in place (24)</li>
+</ul>
+<p>With that in mind, I’ll use some descriptive variable names:</p>
+<pre class="r"><code>start_date = as.Date(&quot;2019-12-30&quot;)
+data_start_date &lt;- start_date + 2 # 2020-01-01
+end_date &lt;- as.Date(&quot;2020-02-11&quot;)
+controls_date &lt;- as.Date(&quot;2020-01-23&quot;)
+extra_days &lt;- 100
+
+start_day &lt;- 0
+end_day &lt;- as.numeric(end_date - start_date) # 43
+extra_end_day &lt;- end_day + extra_days # 143
+days &lt;- 1:extra_end_day # 1:143
+data_start_day &lt;- as.numeric(data_start_date - start_date) # 2
+data_days &lt;- end_day - data_start_day + 1 # 42
+controls_day &lt;- as.numeric(controls_date - start_date) # 24</code></pre>
+<p>Moving on:</p>
+<pre class="r"><code># Age distribution in China for 9 age classes ---------
+# (https://www.worldometers.info/demographics/china-demographics/) 
+
+age_dist&lt;- c(
+  83932437 + 86735183,
+  84262751 + 82341859,
+  87158167+ 97989003,
+  128738970 + 100091455, 
+  96274146 + 119837617,
+  123445382 + 98740491,
+  77514139 + 74149766,
+  44949689 + 26544616,
+  16181417 + 7581777 + 2305024 + 475193 + 74692)
+age_dist&lt;-age_dist/sum(age_dist)</code></pre>
+<p>This is the data we hard-coded earlier for Figure 1B, <code>fig1b_data</code>; specifically, the first panel of “Chinese population”.</p>
+<pre class="r"><code># Population in Hubei ---------
+# (National Bureau of Statistics of China) 
+pop_t = 59020000</code></pre>
+<p>As it says in the header, this is simply the population of Hubei.</p>
+<pre class="r"><code># Case incidence in Hubei up to 2020-02-11 ---------
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+confirmed_cases = read.csv(&quot;data/confirmed_cases.csv&quot;) %&gt;%
+  tbl_df() %&gt;%
+  mutate(date=ymd(paste(year,month,day,sep=&quot;-&quot;))) %&gt;%
+  filter(date&gt;=day_data)
+incidence_cases = pull(confirmed_cases,confirmed_cases_hubei)</code></pre>
+<p>This is the number of cases over time in Hubei, as shown in Figure 1A, but just taking data from the data start day 2020-01-01 and later.</p>
+<pre class="r"><code>incidence_deaths = c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 2, 3, 7, 7, 14, 13, 21, 23, 23, 33, 38, 40, 40, 50, 56, 58, 64,
+                     64, 76, 78, 85, 95, 85)</code></pre>
+<p>These were the death counts over time in Hubei, also in Figure 1A.
+The number of hard-coded values above is 42, which is the correct number of days of data.</p>
+<pre class="r"><code># Age distribution of cases in mainland China as of 2020-02-11 --------- 
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+cases_tmax = c(416,549,3619,7600,8571,10008,8583,3918,1408)
+prop_cases_tmax = cases_tmax / sum(cases_tmax)
+
+# Age distribution of deaths in mainland China as of 2020-02-11 --------- 
+# (Chinese CDC Weekly, The epidemiological characteristics of an outbreak...)
+
+mort_tmax = c(0,1,7,18,38,130,309,312,208)
+prop_mort_tmax = mort_tmax / sum(mort_tmax)</code></pre>
+<p>This last bit of coded is the hard-coded values for the “Confirmed cases” and “Reported deaths” panels of Figure 1B.</p>
+<p>Grab all of this data:</p>
+<pre class="r"><code>chinese_age_dist &lt;- fig1b_data %&gt;%
+  filter(var == &quot;Chinese population&quot;) %&gt;%
+  pull(prop)
+hubei_population &lt;- 59020000
+incidence_cases_hubei &lt;- confirmed_cases %&gt;%
+  filter(date &gt;= data_start_date) %&gt;%
+  pull(confirmed_cases_hubei)
+incidence_deaths_hubei &lt;- confirmed_cases %&gt;%
+  filter(date &gt;= data_start_date) %&gt;%
+  pull(reported_deaths)
+chinese_cases_dist &lt;- fig1b_data %&gt;%
+  filter(var == &quot;Confirmed cases&quot;) %&gt;%
+  pull(prop)
+chinese_deaths_dist &lt;- fig1b_data %&gt;%
+  filter(var == &quot;Reported deaths&quot;) %&gt;%
+  pull(prop)</code></pre>
+<p>Now we can start commenting on some of these values:</p>
+<pre class="r"><code># Format data and set priors
+data_list_model10 = list(
+  time_lag=100, # extra days after tmax
+  K=9, # number of age groups
+  age_dist=age_dist,
+  pop_t = pop_t,
+  t0=0, # start time
+  t_data = t_data, # the day on which data begins (2)
+  tmax =tmax, # maximum number of days (43)
+  tmax2 = tmax, # same
+  tswitch = tswitch, # the day with control measurse + traffic restrictions (24)
+  S=S, # number of days tmax + time_lag (143)
+  ts = 1:S, # vector of those days
+  D = D, # number of days with data + 1 (42)
+  incidence_cases = incidence_cases,
+  incidence_deaths = incidence_deaths,
+  agedistr_cases = cases_tmax,
+  agedistr_deaths = mort_tmax,
+  p_beta=1,
+  p_eta=c(1,1),
+  p_pi=c(1,999),
+  p_incubation=5.6, # Incubation including WR (Linton)
+  p_infectious=2.9, # Infectious period (Liu)
+  p_psi=0.49, # Diamond princess
+  p_epsilon=c(1,1),
+  p_phi = 1/100,
+  p_rho=c(1,1),
+  p_xi=1,
+  p_nu=1/5,
+  G=60,
+  p_gamma=gamma,
+  inference=0,
+  doprint=0
+)</code></pre>
+</div>
 </div>
 <div id="references" class="section level1 unnumbered">
 <h1>References</h1>
