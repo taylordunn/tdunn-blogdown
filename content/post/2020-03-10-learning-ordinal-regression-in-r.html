@@ -1,0 +1,188 @@
+---
+title: Learning ordinal regression in R
+author: Taylor Dunn
+date: '2020-03-10'
+slug: ordinal-regression
+categories: []
+tags: []
+references:
+- id: Randall1989
+  title: The analysis of sensory data by generalised linear model.
+  author:
+  - family: Randall
+    given: J
+  container-title: Biometrical journal
+  volume: 7
+  page: 781-793
+  type: article-journal
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+
+
+<pre class="r"><code>library(tidyverse)</code></pre>
+<pre><code>## Warning: package &#39;tidyverse&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## -- Attaching packages ------------------------------------------------------------ tidyverse 1.3.0 --</code></pre>
+<pre><code>## v ggplot2 3.3.0     v purrr   0.3.3
+## v tibble  2.1.3     v dplyr   0.8.4
+## v tidyr   1.0.2     v stringr 1.4.0
+## v readr   1.3.1     v forcats 0.4.0</code></pre>
+<pre><code>## -- Conflicts --------------------------------------------------------------- tidyverse_conflicts() --
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()</code></pre>
+<pre class="r"><code>library(ordinal)</code></pre>
+<pre><code>## Warning: package &#39;ordinal&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## 
+## Attaching package: &#39;ordinal&#39;</code></pre>
+<pre><code>## The following object is masked from &#39;package:dplyr&#39;:
+## 
+##     slice</code></pre>
+<pre class="r"><code>library(skimr)</code></pre>
+<div id="the-ordinal-package" class="section level1">
+<h1>The <code>ordinal</code> package</h1>
+<ul>
+<li><a href="https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf"><code>ordinal</code> vignette</a></li>
+</ul>
+<p>Because</p>
+<ul>
+<li>It allows for various random effects</li>
+<li>It has <a href="https://rdrr.io/cran/broom/man/ordinal_tidiers.html"><code>broom</code> tidy method</a></li>
+</ul>
+<p>Import the <code>wine</code> data set, adopted from <span class="citation">(Randall, n.d.)</span>.</p>
+<pre class="r"><code>data(wine)
+skim(wine)</code></pre>
+<table>
+<caption><span id="tab:unnamed-chunk-1">Table 1: </span>Data summary</caption>
+<tbody>
+<tr class="odd">
+<td align="left">Name</td>
+<td align="left">wine</td>
+</tr>
+<tr class="even">
+<td align="left">Number of rows</td>
+<td align="left">72</td>
+</tr>
+<tr class="odd">
+<td align="left">Number of columns</td>
+<td align="left">6</td>
+</tr>
+<tr class="even">
+<td align="left">_______________________</td>
+<td align="left"></td>
+</tr>
+<tr class="odd">
+<td align="left">Column type frequency:</td>
+<td align="left"></td>
+</tr>
+<tr class="even">
+<td align="left">factor</td>
+<td align="left">5</td>
+</tr>
+<tr class="odd">
+<td align="left">numeric</td>
+<td align="left">1</td>
+</tr>
+<tr class="even">
+<td align="left">________________________</td>
+<td align="left"></td>
+</tr>
+<tr class="odd">
+<td align="left">Group variables</td>
+<td align="left">None</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Variable type: factor</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">skim_variable</th>
+<th align="right">n_missing</th>
+<th align="right">complete_rate</th>
+<th align="left">ordered</th>
+<th align="right">n_unique</th>
+<th align="center">top_counts</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">rating</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="left">TRUE</td>
+<td align="right">5</td>
+<td align="center">3: 26, 2: 22, 4: 12, 5: 7</td>
+</tr>
+<tr class="even">
+<td align="left">temp</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="left">FALSE</td>
+<td align="right">2</td>
+<td align="center">col: 36, war: 36</td>
+</tr>
+<tr class="odd">
+<td align="left">contact</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="left">FALSE</td>
+<td align="right">2</td>
+<td align="center">no: 36, yes: 36</td>
+</tr>
+<tr class="even">
+<td align="left">bottle</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="left">FALSE</td>
+<td align="right">8</td>
+<td align="center">1: 9, 2: 9, 3: 9, 4: 9</td>
+</tr>
+<tr class="odd">
+<td align="left">judge</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="left">FALSE</td>
+<td align="right">9</td>
+<td align="center">1: 8, 2: 8, 3: 8, 4: 8</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Variable type: numeric</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">skim_variable</th>
+<th align="right">n_missing</th>
+<th align="right">complete_rate</th>
+<th align="right">mean</th>
+<th align="right">sd</th>
+<th align="right">p0</th>
+<th align="right">p25</th>
+<th align="right">p50</th>
+<th align="right">p75</th>
+<th align="right">p100</th>
+<th align="left">hist</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">response</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="right">47.22</td>
+<td align="right">19.83</td>
+<td align="right">12</td>
+<td align="right">32</td>
+<td align="right">46</td>
+<td align="right">60</td>
+<td align="right">90</td>
+<td align="left">▃▇▇▃▃</td>
+</tr>
+</tbody>
+</table>
+<div id="refs" class="references hanging-indent">
+<div id="ref-Randall1989">
+<p>Randall, J. n.d. “The Analysis of Sensory Data by Generalised Linear Model.” <em>Biometrical Journal</em> 7: 781–93.</p>
+</div>
+</div>
+</div>

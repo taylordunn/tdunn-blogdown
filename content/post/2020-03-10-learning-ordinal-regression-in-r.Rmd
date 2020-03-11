@@ -1,0 +1,229 @@
+---
+title: Learning ordinal regression in R
+author: Taylor Dunn
+date: '2020-03-10'
+slug: ordinal-regression
+categories: []
+tags: []
+references:
+- id: Randall1989
+  title: The analysis of sensory data by generalised linear model.
+  author:
+  - family: Randall
+    given: J
+  container-title: Biometrical journal
+  volume: 7
+  page: 781-793
+  type: article-journal
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ordinal)
+library(skimr)
+library(gt)
+library(broom)
+library(patchwork)
+
+# Set ggplot2 theme and defaults
+theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = "xy"))
+ggp <- function(...) ggplot(...) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+AKA cumulative link models, ordered logit models, ordered probit models, proportional odds models.
+
+# The `ordinal` package
+
+* [`ordinal` vignette](https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf)
+* [`ordinal` primer](https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&root=ordinal&pathrev=69)
+
+Because
+
+* It allows for various random effects
+* It has [`broom` tidy method](https://rdrr.io/cran/broom/man/ordinal_tidiers.html)
+
+# The data
+
+Import the `wine` data set, adopted from [@Randall1989]:
+
+```{r}
+data(wine)
+wine <- as_tibble(wine)
+skim(wine)
+```
+
+* Outcome:
+    * `response`: wine bitterness rating on a 0-100 scale
+    * `rating`: ordered factor with 5 levels (grouped version of `response`) with 1 = "least bitter" and 5 = "most bitter"
+* Treatment factors:
+    * `temp`: temperature during wine production (`r str_c(unique(wine$temp), collapse = " and ")`)
+    * `contact`: contact between juice and skins during wine production (`r str_c(unique(wine$contact), collapse = " and ")`)
+* Random effects
+    * `bottle` with `r nlevels(wine$bottle)` levels
+    * `judge` with `r nlevels(wine$judge)` levels
+
+Relationship between `response` and `rating`:
+
+```{r}
+wine %>%
+  ggplot(aes(x = rating, y = response)) +
+  geom_boxplot() +
+  geom_jitter()
+```
+
+There is no overlap between the levels:
+
+```{r}
+wine %>%
+  group_by(rating) %>%
+  summarise(min_response = min(response), max_response = max(response))
+```
+
+There are `r nrow(wine)` total observations with the following ratings distribution by treatment and random effects:
+
+```{r}
+wine %>%
+  select(temp, contact, bottle, judge, rating) %>%
+  spread(judge, rating) %>%
+  gt() %>%
+  tab_spanner(columns = vars(`1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`),
+              label = "judge")
+```
+
+So each `bottle` had a particular `temp` and `contact` (2 bottles for each of the 4 combinations), and each `judge` rated each bottle.
+
+Before modeling, can we see a clear effect of `temp` and `contact`?
+
+```{r fig.width=4, fig.height=5}
+wine %>%
+  count(contact, rating, temp) %>%
+  mutate(temp = fct_rev(temp)) %>%
+  ggp(aes(x = contact, y = rating, color = temp)) +
+  geom_point(aes(group = temp, size = n), position = position_dodge(1)) +
+  cowplot::theme_minimal_hgrid() +
+  facet_wrap(~contact, scales = "free_x") +
+  theme(
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  ) +
+  scale_size(breaks = c(1, 2, 4, 6, 8))
+```
+
+At a glance, it looks like the `temp` = warm and `contact` = yes is associated with higher `rating`s.
+
+# The cumulative link mixed model
+
+The ordinal response $y_i$ falls into response category $j$ (out of $J$ total) with proability $\pi_{ij}$.
+The cumulative probabilities are defined:
+
+$$
+P(y_i \leq j) = \pi_{i1} + \dots + \pi_{ij}.
+$$
+
+As an oversimplification, suppose that the probabilities $\pi_{ij}$ are equal to the proportion of response in the `wine` data.
+Then the cumulative "probability" can be visualized:
+
+```{r}
+wine_prop <- wine %>%
+  count(rating) %>%
+  mutate(p = n / sum(n),
+         cumsum_p = cumsum(p))
+(
+ggp(wine_prop, aes(x = rating, y = p)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+  labs(x = "j", y = "proportion") +
+  cowplot::theme_minimal_hgrid()
+) +
+  (
+    ggp(wine_prop, aes(x = as.integer(rating), y = cumsum_p)) +
+      geom_point() +
+      geom_line() +
+      labs(x = "j", y = "cumulative proportion") +
+      cowplot::theme_minimal_hgrid()
+  ) +
+  (
+    ggp(wine_prop,
+        aes(x = as.integer(rating), y = log(cumsum_p) - log(1 - cumsum_p))) +
+      geom_point() +
+      geom_line() +
+      labs(x = "j", y = "logit(cumulative proportion)") +
+      cowplot::theme_minimal_hgrid()
+  )
+```
+
+We will explore other links, but first the most common, the logit link, which is depicted in the right-most panel of the above figure:
+
+$$
+\text{logit} (P(y_i \leq j) = \log \frac{P(y_i \leq j)}{1 - P(y_i \leq j)}
+$$
+
+Note that the above function is defined for all but the last category, as $1 - P(Y_i \leq j) = 1 - 1 = 0$.
+
+For the `wine` data, where we have $J$ = 5 rating categories, we fit the following model:
+
+$$
+\begin{align}
+\text{logit}(p(y_i \leq j)) &= \theta_j - \beta_1 \text{temp}_i - \beta_2 \text{contact}_i - u( \text{judge}_i) \\
+i &= 1, \dots n \; \; \; \; \; \; j = 1, \dots, J - 1
+\end{align}
+$$
+
+where $\theta_j$ is called the threshold parameter, or cutpoint, of category $j$, which can also be thought of as $J-1$ = 4 intercepts.
+Note that the fixed effect parameters $\beta_1$ and $\beta2$ are independent of $j$, so each $\beta$ has the same effect for each of the $J-1$ cumulative logits.
+The judge effects, which also have the same effect regardless of $j$, are assumed normal: $u(\text{judge}_i) \sim N(0, \sigma_u^2)$.
+
+The subtraction of terms in the above model is new to me.
+The main reason seems to be a choice of familiar interpretation: the larger the value of any indepdent term $\beta x$, the smaller the thresholds $\theta_j$, and therefore a larger probability of the a response falling into a category at the upper end of the scale.
+This way, $\beta$ has the same *direction* of effect as in ordinary linear regression.
+
+We are modeling a "chain" of logistic regressions where the binary response is "less than or equal to a certain level" vs "greater than that level".
+In this case with $J$ = 5, the thresholds $\theta_j$ are capturing the adjusted log-odds of observing:
+
+* $j$ = 1: log-odds of `rating` = 1 vs. 2-5
+* $j$ = 2: log-odds of `rating` = 1-2 vs. 3-5
+* $j$ = 3: log-odds of `rating` = 1-3 vs. 4-5
+* $j$ = 4: log-odds of `rating` = 1-4 vs. 5
+
+Now with a surface-level understanding of what is being modeled, fit the data using `ordinal::clmm` with a logit link:
+
+```{r}
+clmm_rating <-
+  clmm(
+    rating ~ temp + contact + (1|judge),
+    data = wine, link = "logit"
+  )
+summary(clmm_rating)
+```
+
+
+The model gives us $K - 1 = 4$ threshold coefficients, which is like having 4 different intercepts.
+
+```{r}
+tidy(clmm_rating)
+wine %>%
+  count(rating)
+```
+
+
+
+## Choice of link function
+
+Here, we are using the $\logit$ link
+
+https://kevinstadler.github.io/blog/bayesian-ordinal-regression-with-random-effects-using-brms/
+
+# The linear approach
+
+https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&root=ordinal&pathrev=69
+
+>Alternativelynumbers can be attached to the response categories, e.g., 1,2,...,Jand the resulting scorescan be analyzed by conventional linear regression and ANOVA models.  This approach isin a sense over-confident since the data are assumed to contain more information than theyactually do.  Observations on an ordinal scale are classified in ordered categories, but thedistance between the categories is generally unknown.  By using linear models the choice ofscoring impose assumptions about the distance between the response categories.  Further,standard  errors  and  tests  from  linear  models  rest  on  the  assumption  that  the  response,conditional on the explanatory variables, is normally distributed (equivalently the residualsare assumed to be normally distributed). This cannot be the case since the scores are discreteand responses beyond the end categories are not possible.  If there are many responses in theend categories, there will most likely be variance heterogeneity to whichFandttests canbe rather sensitive.  If there are many response categories and the response does not pile upin the end categories, we may expect tests from linear models to be accurate enough, butany bias and optimism is hard to quantify
+
+
+
+
+
+
+
