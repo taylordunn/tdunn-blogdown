@@ -1,10 +1,14 @@
 ---
-title: Learning ordinal regression in R
+title: 'Ordinal regression in R: part 1'
 author: Taylor Dunn
-date: '2020-03-10'
-slug: ordinal-regression
+date: '2020-03-15'
+slug: ordinal-regression-in-r-part-1
 categories: []
-tags: []
+tags:
+  - tidyverse
+  - rstats
+  - regression
+  - frequentist
 references:
 - id: Randall1989
   title: The analysis of sensory data by generalised linear model.
@@ -19,9 +23,21 @@ references:
     year: 1989
 ---
 
-```{r setup, include=FALSE}
+The purpose of this post is to learn about ordinal regression models (a.k.a. cumulative link, proportional odds, ordered logit models, etc.) and practice their implementation.
+This is part 1, where I'll be taking the frequentist approach via the [`ordinal` package](https://cran.r-project.org/web/packages/ordinal/index.html).
+There are other options, like `MASS::polr`, but two features in particular drew me to `ordinal`: (1) it allows for random effects, and (2) it has [`broom::tidy` methods](https://rdrr.io/cran/broom/man/ordinal_tidiers.html) available.
+
+Particularly, I'll be following along with
+
+* this excellent [primer](https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&root=ordinal&pathrev=69) which includes theory and application, and
+* this [vignette](https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf) which is a tutorial on incorporating random effects.
+
+# Setup
+
+Import the usual suspects and set the `ggplot2` theme:
+
+```{r}
 library(tidyverse)
-library(ordinal)
 library(gt)
 library(broom)
 library(patchwork)
@@ -34,33 +50,17 @@ ggp <- function(...) ggplot(...) +
   scale_fill_brewer(palette = "Set1")
 ```
 
-AKA cumulative link models, ordered logit models, ordered probit models, proportional odds models.
-
-I will explore three general frameworks:
-
-* Frequentist maximum likelihood fixed effects models
-* Frequentist maximum likelihood mixed effects models
-* Bayesian mixed effects models
-
-# The `ordinal` package
-
-* [`ordinal` vignette](https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf)
-* [`ordinal` primer](https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&root=ordinal&pathrev=69)
-
-Because
-
-* It allows for various random effect structures
-* It has [`broom` tidy method](https://rdrr.io/cran/broom/man/ordinal_tidiers.html)
-
-# The data
-
-Import the `wine` data set, adopted from [@Randall1989]:
+Import `ordinal`, and the included data set `wine`:
 
 ```{r}
+library(ordinal)
 data(wine)
 wine <- as_tibble(wine)
 glimpse(wine)
 ```
+
+`wine` is a data set of wine bitterness ratings from multiple judges.
+The variables are as follows:
 
 * Outcome:
     * `response`: wine bitterness rating on a 0-100 scale
@@ -76,10 +76,11 @@ Relationship between `response` and `rating`:
 
 ```{r}
 wine %>%
-  ggplot(aes(x = rating, y = response)) +
+  ggp(aes(x = rating, y = response)) +
   geom_boxplot() +
   geom_jitter()
 ```
+
 
 Note that there is no overlap between the levels.
 
@@ -119,7 +120,7 @@ At a glance, it looks like the `temp` = warm and `contact` = yes is associated w
 
 ## Theory
 
-The ordinal response $y_i$ falls into response category $j$ (out of $J$ total) with proability $\pi_{ij}$.
+The ordinal response $y_i$ falls into response category $j$ (out of $J$ total) with probability $\pi_{ij}$.
 The cumulative probabilities are defined:
 
 $$
@@ -164,7 +165,7 @@ $$
 \text{logit} (P(y_i \leq j) = \log \frac{P(y_i \leq j)}{1 - P(y_i \leq j)}
 $$
 
-Note that the above function is defined for all but the last category, because $1 - P(Y_i \leq j) = 1 - 1 = 0$.
+Note that the above function is defined for all but the last category $j = J$, because $1 - P(Y_i \leq J) = 1 - 1 = 0$.
 
 For the `wine` data, where we have $J$ = 5 rating categories, we will build up to the following mixed effects model:
 
@@ -175,13 +176,14 @@ i &= 1, \dots n \; \; \; \; \; \; j = 1, \dots, J - 1
 \end{align}
 $$
 
-where $\theta_j$ is called the threshold parameter, or cutpoint, of category $j$, which can also be thought of as $J-1$ = 4 intercepts.
+where $\theta_j$ is called the threshold parameter, or cutpoint, of category $j$.
+These thresholds can also be thought of as $J-1$ = 4 intercepts.
 Note that the fixed effect parameters $\beta_1$ and $\beta_2$ are independent of $j$, so each $\beta$ has the same effect for each of the $J-1$ cumulative logits.
 The judge effects, which are also independent of $j$, are assumed normal: $u(\text{judge}_i) \sim N(0, \sigma_u^2)$.
 We are using the logit link because it is the most popular for this kind of model (and the one I am familiar with), but there are other options we will briefly explore later.
 
 The subtraction of terms in the above model is new to me.
-The main reason seems to be a choice of familiar interpretation: the larger the value of any independent term $\beta x$, the smaller the thresholds $\theta_j$, and therefore a larger probability of the a response falling into a category at the upper end of the scale.
+The main reason seems to be for familiar interpretation: the larger the value of any independent term $\beta x$, the smaller the thresholds $\theta_j$, and therefore a larger probability of the a response falling into a category at the upper end of the scale.
 This way, $\beta$ has the same *direction* of effect as in ordinary linear regression.
 
 We are essentially modeling a "chain" of logistic regressions where the binary response is "less than or equal to a certain level" vs "greater than that level".
@@ -217,9 +219,9 @@ The model gives us $K - 1 = 4$ threshold coefficients, as expected.
 The $\beta_2$ coefficient estimate was statistically significant (by a Wald test), and tells us that `contact` = yes *decreases* the thresholds $\theta_j$ by $\beta_2$ = `r round(tidy(clm_rating_contact)$estimate[5], 2)` (because of the subtraction of model terms), and therefore is associated with *higher* `rating`s.
 
 The condition number of the Hessian for this model is `r round(clm_rating_contact$cond.H, 2)`.
-The primer says that larger values (like > `1e4`) might indicate that the model is ill defined.
+The primer says that larger values (like > `1e4`) might indicate that the model is ill-defined.
 
-It is nicely illustrative to compare this model to 4 separate logistic regressions with a dichomtized response:
+It is nicely illustrative to compare this model to 4 separate logistic regressions with a dichotomized response:
 
 $$
 \begin{align}
@@ -296,7 +298,7 @@ summary(clm_rating_contact_temp)
 ```
 
 Both fixed effects (`contact` = yes and `temp` = warm) are strongly associated with higher probability of higher ratings.
-The `summary()` function provides p values from Wald tests, but more accurate likelihood ratio tests can be done via the `drop1()` function, which evaluates each fixed effect while controlling the other:
+The `summary` function provides p values from Wald tests, but more accurate likelihood ratio tests can be done via the `drop1` function, which evaluates each fixed effect while controlling the other:
 
 ```{r}
 drop1(clm_rating_contact_temp, test = "Chisq")
@@ -314,7 +316,7 @@ clm_rating_null <-
 add1(clm_rating_null, scope = ~ contact + temp, test = "Chisq")
 ```
 
-Symmetric Wald confidence intervals can be extracted with `confint()` or with `broom::tidy()`:
+Symmetric Wald confidence intervals can be extracted with `confint` or with `broom::tidy`:
 
 ```{r fig.height=2, fig.width=5}
 tidy(clm_rating_contact_temp, conf.int = T, conf.type = "Wald") %>%
@@ -333,7 +335,7 @@ $$
 \end{align}
 $$
 
-where we have introducted the shorthand $\gamma_j = \text{logit} (p(y \leq j))$.
+where we have introduced the shorthand $\gamma_j = \text{logit} (p(y \leq j))$.
 Compute those odds ratios, and their corresponding Wald 95% CIs:
 
 ```{r fig.height=2, fig.width=5}
@@ -413,7 +415,6 @@ In particular, the distance between thresholds is not equidistant:
 diff(coef(clm_rating_contact_temp_probit)[1:4]) %>% round(2)
 ```
 
-
 ### Mixed effects model
 
 Now that we have explored ordinal regression with just fixed effects, we will fit the following random effects model:
@@ -424,10 +425,11 @@ $$
 i &= 1, \dots n \; \; \; \; \; \; j = 1, \dots, J - 1
 \end{align}
 $$
+
 where the judge effects are independent of $j$, and assumed normal: $u(\text{judge}_i) \sim N(0, \sigma_u^2)$.
 
 Each judge has 8 `rating`s each (two per combination of `temp` and `contact`).
-See if we can spot the `judge` variance:
+See if we can spot the `judge` variance in a plot of `rating`s:
 
 ```{r}
 wine %>%
@@ -443,7 +445,7 @@ wine %>%
   labs(title = "Number of ratings by judge")
 ```
 
-There is definitly some judge-specific variability in the perception of bitterness in wine.
+There is definitely some judge-specific variability in the perception of bitterness of wine.
 `judge` 5, for instance, doesn't stray far from `rating` = 3, while `judge` 7 didn't consider any of the wines particularly bitter.
 
 Fit the model with `ordinal::clmm` and logit link:
@@ -538,7 +540,7 @@ wine %>%
 ```
 
 This only gives us predictions for `rating`, `temp` and `contact` values which exist in the data.
-There is no `rating` > 3 for `temp` cold and `contact` no, for example.
+There is no predicted probability for `rating` > 3, `temp` cold and `contact` no, for example.
 Another way is to pre-specify which values we want to predict:
 
 ```{r fig.height=3, fig.width=5}
@@ -565,15 +567,16 @@ P(y_i \leq j) = \text{logit}^{-1} [\theta_j - \beta_2 \text{contact}_i]
 $$
 
 where we are considering the average judge ($u(\text{judge}_i) = 0$).
-The inverse logit is $\text{logit}^{-1}(x) = 1 / (1 + \exp(x))$, and can be calculated with `plogis` as a shorthand.
-We can subtract cumulative probabilites to get non-cumulative probabilities of a category $j$, for example:
+The inverse logit is $\text{logit}^{-1}(x) = 1 / (1 + \exp(-x))$, and can be calculated with `plogis` as a shorthand (`brms::inv_logit_scaled` is another).
+We can subtract cumulative probabilities to get non-cumulative probabilities of a rating $j$.
+For example, $j$ = 3:
 
 ```{r}
 plogis(clmm_rating_contact_temp$Theta[3] - clmm_rating_contact_temp$beta[2]) -
   plogis(clmm_rating_contact_temp$Theta[2] - clmm_rating_contact_temp$beta[2])
 ```
 
-which matches the value calculated previously for $j$ = 3.
+which matches the value calculated previously using `predict`.
 
 ```{r eval=FALSE, include=FALSE}
 # Just checking the plogis() calculation
@@ -591,7 +594,7 @@ tidy(clmm_rating_contact_temp) %>%
 
 #### Choice of link function
 
-So far, we have used the logit link (and briefly the probit link to compare to linear regression).
+So far, we have used the logit link (and briefly the probit link to compare estimates with linear regression).
 The links available to `ordinal::clmm` are logit, probit, cloglog, loglog, and cauchit.
 
 We can fit the CLMM using all of these links and compare log-likelihoods:
@@ -652,144 +655,32 @@ wine %>%
 Note the change in degrees of freedom, resulting in the equidistant probit model having the lowest BIC.
 In terms of log likelihood, however, flexible always outperform equidistant thresholds.
 
-## Bayesian regression
+# Conclusion
 
-Load the `brms` package:
+Thanks to detailed documentation, fitting cumulative link (mixed) models is very easy with `ordinal`.
+In this post, we first learned the theoretical basis for these models, then worked through examples using `wine` bitterness ratings from multiple judges.
 
-```{r message=F}
-library(brms)
-# Detect and set the number of cores
-options(mc.cores = parallel::detectCores())
-```
+In the next post, I'll explore the Bayesian approach to ordinal regression with the `brms` package.
 
-We will fit a null cumulative link mixed model, and models with the fixed effects with default priors:
-
+# Session info
 
 ```{r}
-f_rating_null <- rating ~ 1 + (1|judge)
-f_rating_contact <- rating ~ 1 + contact + (1|judge)
-f_rating_contact_temp <- rating ~ 1 + contact + temp + (1|judge)
-get_prior(f_rating_contact_temp, data = wine, family = cumulative("logit"))
+devtools::session_info()
 ```
-
-First, the null model with no predictors:
-
-```{r}
-brm_rating_null <-
-  brm(
-    f_rating_null,
-    data = wine,
-    family = cumulative("logit"),
-    sample_prior = TRUE,
-    file = here("data", "ordinal_regression", "brm_rating_null.rds")
-  )
-```
-
-We can visualize the two priors (on thresholds/Intercepts, and on SD of judge effects) with `brms:prior_samples`:
-
-```{r fig.width=5, fig.height=7}
-get_prior(f_rating_null, data = wine, family = cumulative("logit"))
-p1 <-
-  prior_samples(brm_rating_null) %>%
-  gather(term, value) %>%
-  ggp(aes(x = value)) +
-  geom_density(size = 1) +
-  geom_density(
-    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
-                  prior = "student_t(3, 0, 10)", term = "Intercept"),
-    aes(x, color = prior), size = 1
-  ) +
-  geom_density(
-    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
-                  prior = "abs(student_t(3, 0, 10))", term = "sd_judge"),
-    aes(abs(x), color = prior), size = 1,
-  ) +
-  facet_wrap(~term, scales = "free") +
-  cowplot::theme_minimal_vgrid() +
-  theme(axis.text.y = element_blank())
-p1 +
-  (p1 + coord_cartesian(xlim = c(-10, 20))) +
-  plot_layout(ncol = 1, guides = "collect")
-```
-
-Note that, since a standard deviation can't be negative, `brms` automatically takes the absolute value of the defualt `student_t(3, 0, 10)` prior.
-
-These are obviously very uninformative priors.
-For instance, Intercepts (aka thresholds $\theta_j$) between -20 and +20 correspond to the following probabilities:
-
-```{r fig.height=2}
-tibble(theta = seq(-20, 20)) %>%
-  mutate(p = inv_logit_scaled(theta)) %>%
-  ggp(aes(x = theta, y = p)) +
-  geom_line(size = 1)
-```
-
-So any prior values of, say, -10 are assigning essentially zero cumulative probability for a level $\leq j$.
-
-Now that we've thought about our (default) prior assumptions, investigate the chains:
-
-```{r fig.height=8}
-plot(brm_rating_null)
-```
-
-The Intercept trace plots look good to me.
-There are some spikes in `sd_judge__Intercept`, but not enough to be concerning.
-
-Print the model estimates:
-
-```{r}
-brm_rating_null
-```
-
-The `Rhat` values are also a good sign of model convergence.
-Compare our null Bayesian model estimates to the frequentist estimates:
-
-```{r}
-# Can't figure out how to extract random effect SDs from a clmm model, use clmm2
-clmm2_rating_null <-
-  clmm2(
-    rating ~ 1, random = judge,
-    data = wine, link = "logistic", Hess = TRUE
-  )
-# Unfortunately, clmm2 doesn't have a broom::tidy() function
-summary(clmm2_rating_null) %>%
-  coef() %>%
-  as_tibble() %>%
-  mutate(term = str_c("b_Intercept[", 1:4, "]")) %>%
-  bind_rows(
-    tibble(
-      Estimate = as.numeric(clmm2_rating_null$stDev),
-      term = "sd_judge__Intercept"
-    )
-  ) %>%
-  janitor::clean_names() %>%
-  left_join(
-    tidy(brm_rating_null),
-    by = "term"
-  ) %>%
-  select(term, everything()) %>%
-  mutate(
-    pr_z = scales::pvalue(pr_z),
-    across(is.numeric, ~round(., 2))
-  ) %>%
-  gt() %>%
-  tab_spanner(
-    label = "ordinal::clmm",
-    columns = vars(estimate.x, std_error, z_value, pr_z)
-  ) %>%
-  tab_spanner(
-    label = "brms::brm",
-    columns = vars(estimate.y, std.error, lower, upper)
-  )
-```
-
-Estimates are pretty close, even with our naive priors.
-
-So what are reasonable priors for this kind of analysis?
-My go-to resource for this kind of thing is [this page from the stan wiki](https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations), but under the "Prior for cutpoints in ordered logit or probit regression", they say "Need to flesh out this section with examples."
-
 
 # References
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

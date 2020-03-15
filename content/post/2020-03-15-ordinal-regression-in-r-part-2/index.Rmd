@@ -1,0 +1,200 @@
+---
+title: 'Ordinal regression in R: part 2'
+author: Taylor Dunn
+date: '2020-03-15'
+slug: ordinal-regression-in-r-part-2
+categories: []
+tags:
+  - tidyverse
+  - rstats
+  - regression
+  - bayesian
+references:
+- id: Randall1989
+  title: The analysis of sensory data by generalised linear model.
+  author:
+  - family: Randall
+    given: J
+  container-title: Biometrical journal
+  volume: 7
+  page: 781-793
+  type: article-journal
+  issued:
+    year: 1989
+---
+
+The purpose of this post is to learn about ordinal regression models (a.k.a. cumulative link, proportional odds, ordered logit models, etc.) and practice their implementation.
+This is part 1, where I'll be taking the frequentist approach via the [`ordinal` package](https://cran.r-project.org/web/packages/ordinal/index.html).
+There are other options, like `MASS::polr`, but two features in particular drew me to `ordinal`: (1) it allows for random effects, and (2) it has [`broom::tidy` methods](https://rdrr.io/cran/broom/man/ordinal_tidiers.html) available.
+
+Particularly, I'll be following along with
+
+* this excellent [primer](https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&root=ordinal&pathrev=69) which includes theory and application, and
+* this [vignette](https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf) which is a tutorial on incorporating random effects.
+
+# Setup
+
+Import the usual suspects and set the `ggplot2` theme:
+
+```{r}
+library(tidyverse)
+library(gt)
+library(broom)
+library(patchwork)
+library(here)
+
+# Set ggplot2 theme and defaults
+theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = "xy"))
+ggp <- function(...) ggplot(...) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+Import `ordinal`, and the included data set `wine`:
+
+```{r}
+library(ordinal)
+data(wine)
+wine <- as_tibble(wine)
+glimpse(wine)
+```
+
+## Bayesian regression
+
+Load the `brms` package:
+
+```{r message=F}
+library(brms)
+# Detect and set the number of cores
+options(mc.cores = parallel::detectCores())
+```
+
+We will fit a null cumulative link mixed model, and models with the fixed effects with default priors:
+
+
+```{r}
+f_rating_null <- rating ~ 1 + (1|judge)
+f_rating_contact <- rating ~ 1 + contact + (1|judge)
+f_rating_contact_temp <- rating ~ 1 + contact + temp + (1|judge)
+get_prior(f_rating_contact_temp, data = wine, family = cumulative("logit"))
+```
+
+First, the null model with no predictors:
+
+```{r}
+brm_rating_null <-
+  brm(
+    f_rating_null,
+    data = wine,
+    family = cumulative("logit"),
+    sample_prior = TRUE,
+    file = "brm_rating_null.rds"
+  )
+```
+
+We can visualize the two priors (on thresholds/Intercepts, and on SD of judge effects) with `brms:prior_samples`:
+
+```{r fig.width=5, fig.height=7}
+get_prior(f_rating_null, data = wine, family = cumulative("logit"))
+p1 <-
+  prior_samples(brm_rating_null) %>%
+  gather(term, value) %>%
+  ggp(aes(x = value)) +
+  geom_density(size = 1) +
+  geom_density(
+    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
+                  prior = "student_t(3, 0, 10)", term = "Intercept"),
+    aes(x, color = prior), size = 1
+  ) +
+  geom_density(
+    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
+                  prior = "abs(student_t(3, 0, 10))", term = "sd_judge"),
+    aes(abs(x), color = prior), size = 1,
+  ) +
+  facet_wrap(~term, scales = "free") +
+  cowplot::theme_minimal_vgrid() +
+  theme(axis.text.y = element_blank())
+p1 +
+  (p1 + coord_cartesian(xlim = c(-10, 20))) +
+  plot_layout(ncol = 1, guides = "collect")
+```
+
+Note that, since a standard deviation can't be negative, `brms` automatically takes the absolute value of the defualt `student_t(3, 0, 10)` prior.
+
+These are obviously very uninformative priors.
+For instance, Intercepts (aka thresholds $\theta_j$) between -20 and +20 correspond to the following probabilities:
+
+```{r fig.height=2}
+tibble(theta = seq(-20, 20)) %>%
+  mutate(p = inv_logit_scaled(theta)) %>%
+  ggp(aes(x = theta, y = p)) +
+  geom_line(size = 1)
+```
+
+So any prior values of, say, -10 are assigning essentially zero cumulative probability for a level $\leq j$.
+
+Now that we've thought about our (default) prior assumptions, investigate the chains:
+
+```{r fig.height=8}
+plot(brm_rating_null)
+```
+
+The Intercept trace plots look good to me.
+There are some spikes in `sd_judge__Intercept`, but not enough to be concerning.
+
+Print the model estimates:
+
+```{r}
+brm_rating_null
+```
+
+The `Rhat` values are also a good sign of model convergence.
+Compare our null Bayesian model estimates to the frequentist estimates:
+
+```{r}
+# Can't figure out how to extract random effect SDs from a clmm model, use clmm2
+clmm2_rating_null <-
+  clmm2(
+    rating ~ 1, random = judge,
+    data = wine, link = "logistic", Hess = TRUE
+  )
+# Unfortunately, clmm2 doesn't have a broom::tidy() function
+summary(clmm2_rating_null) %>%
+  coef() %>%
+  as_tibble() %>%
+  mutate(term = str_c("b_Intercept[", 1:4, "]")) %>%
+  bind_rows(
+    tibble(
+      Estimate = as.numeric(clmm2_rating_null$stDev),
+      term = "sd_judge__Intercept"
+    )
+  ) %>%
+  janitor::clean_names() %>%
+  left_join(
+    tidy(brm_rating_null),
+    by = "term"
+  ) %>%
+  select(term, everything()) %>%
+  mutate(
+    pr_z = scales::pvalue(pr_z),
+    across(is.numeric, ~round(., 2))
+  ) %>%
+  gt() %>%
+  tab_spanner(
+    label = "ordinal::clmm",
+    columns = vars(estimate.x, std_error, z_value, pr_z)
+  ) %>%
+  tab_spanner(
+    label = "brms::brm",
+    columns = vars(estimate.y, std.error, lower, upper)
+  )
+```
+
+Estimates are pretty close, even with our naive priors.
+
+So what are reasonable priors for this kind of analysis?
+My go-to resource for this kind of thing is [this page from the stan wiki](https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations), but under the "Prior for cutpoints in ordered logit or probit regression", they say "Need to flesh out this section with examples."
+
+# References
+
+

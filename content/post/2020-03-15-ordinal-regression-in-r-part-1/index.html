@@ -1,10 +1,14 @@
 ---
-title: Learning ordinal regression in R
+title: 'Ordinal regression in R: part 1'
 author: Taylor Dunn
-date: '2020-03-10'
-slug: ordinal-regression
+date: '2020-03-15'
+slug: ordinal-regression-in-r-part-1
 categories: []
-tags: []
+tags:
+  - tidyverse
+  - rstats
+  - regression
+  - frequentist
 references:
 - id: Randall1989
   title: The analysis of sensory data by generalised linear model.
@@ -22,28 +26,45 @@ references:
 <script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
 
 
-<p>AKA cumulative link models, ordered logit models, ordered probit models, proportional odds models.</p>
-<p>I will explore three general frameworks:</p>
+<p>The purpose of this post is to learn about ordinal regression models (a.k.a. cumulative link, proportional odds, ordered logit models, etc.) and practice their implementation.
+This is part 1, where I’ll be taking the frequentist approach via the <a href="https://cran.r-project.org/web/packages/ordinal/index.html"><code>ordinal</code> package</a>.
+There are other options, like <code>MASS::polr</code>, but two features in particular drew me to <code>ordinal</code>: (1) it allows for random effects, and (2) it has <a href="https://rdrr.io/cran/broom/man/ordinal_tidiers.html"><code>broom::tidy</code> methods</a> available.</p>
+<p>Particularly, I’ll be following along with</p>
 <ul>
-<li>Frequentist maximum likelihood fixed effects models</li>
-<li>Frequentist maximum likelihood mixed effects models</li>
-<li>Bayesian mixed effects models</li>
+<li>this excellent <a href="https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&amp;root=ordinal&amp;pathrev=69">primer</a> which includes theory and application, and</li>
+<li>this <a href="https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf">vignette</a> which is a tutorial on incorporating random effects.</li>
 </ul>
-<div id="the-ordinal-package" class="section level1">
-<h1>The <code>ordinal</code> package</h1>
-<ul>
-<li><a href="https://cran.r-project.org/web/packages/ordinal/vignettes/clmm2_tutorial.pdf"><code>ordinal</code> vignette</a></li>
-<li><a href="https://r-forge.r-project.org/scm/viewvc.php/*checkout*/pkg/ordinal/inst/doc/primer.pdf?revision=66&amp;root=ordinal&amp;pathrev=69"><code>ordinal</code> primer</a></li>
-</ul>
-<p>Because</p>
-<ul>
-<li>It allows for various random effect structures</li>
-<li>It has <a href="https://rdrr.io/cran/broom/man/ordinal_tidiers.html"><code>broom</code> tidy method</a></li>
-</ul>
-</div>
-<div id="the-data" class="section level1">
-<h1>The data</h1>
-<p>Import the <code>wine</code> data set, adopted from <span class="citation">(Randall 1989)</span>:</p>
+<div id="setup" class="section level1">
+<h1>Setup</h1>
+<p>Import the usual suspects and set the <code>ggplot2</code> theme:</p>
+<pre class="r"><code>library(tidyverse)</code></pre>
+<pre><code>## Warning: package &#39;tidyverse&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## -- Attaching packages ------------------------------------------------------------ tidyverse 1.3.0 --</code></pre>
+<pre><code>## v ggplot2 3.3.0           v purrr   0.3.3      
+## v tibble  2.1.3           v dplyr   0.8.99.9000
+## v tidyr   1.0.2           v stringr 1.4.0      
+## v readr   1.3.1           v forcats 0.4.0</code></pre>
+<pre><code>## -- Conflicts --------------------------------------------------------------- tidyverse_conflicts() --
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()</code></pre>
+<pre class="r"><code>library(gt)
+library(broom)
+library(patchwork)
+library(here)</code></pre>
+<pre><code>## here() starts at D:/Taylor/Documents/tdunn</code></pre>
+<pre class="r"><code># Set ggplot2 theme and defaults
+theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = &quot;xy&quot;))
+ggp &lt;- function(...) ggplot(...) +
+  scale_color_brewer(palette = &quot;Set1&quot;) +
+  scale_fill_brewer(palette = &quot;Set1&quot;)</code></pre>
+<p>Import <code>ordinal</code>, and the included data set <code>wine</code>:</p>
+<pre class="r"><code>library(ordinal)</code></pre>
+<pre><code>## Warning: package &#39;ordinal&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## 
+## Attaching package: &#39;ordinal&#39;</code></pre>
+<pre><code>## The following object is masked from &#39;package:dplyr&#39;:
+## 
+##     slice</code></pre>
 <pre class="r"><code>data(wine)
 wine &lt;- as_tibble(wine)
 glimpse(wine)</code></pre>
@@ -55,6 +76,8 @@ glimpse(wine)</code></pre>
 ## $ contact  &lt;fct&gt; no, no, yes, yes, no, no, yes, yes, no, no, yes, yes, no, ...
 ## $ bottle   &lt;fct&gt; 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4...
 ## $ judge    &lt;fct&gt; 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3...</code></pre>
+<p><code>wine</code> is a data set of wine bitterness ratings from multiple judges.
+The variables are as follows:</p>
 <ul>
 <li>Outcome:
 <ul>
@@ -74,10 +97,10 @@ glimpse(wine)</code></pre>
 </ul>
 <p>Relationship between <code>response</code> and <code>rating</code>:</p>
 <pre class="r"><code>wine %&gt;%
-  ggplot(aes(x = rating, y = response)) +
+  ggp(aes(x = rating, y = response)) +
   geom_boxplot() +
   geom_jitter()</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
 <p>Note that there is no overlap between the levels.</p>
 <p>There are 72 total observations with the following ratings distribution by treatment and random effects:</p>
 <pre class="r"><code>wine %&gt;%
@@ -90,7 +113,7 @@ glimpse(wine)</code></pre>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#ikszmzaeoh .gt_table {
+#mkpcjdhran .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -107,7 +130,7 @@ glimpse(wine)</code></pre>
   border-bottom-color: #A8A8A8;
 }
 
-#ikszmzaeoh .gt_heading {
+#mkpcjdhran .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -118,7 +141,7 @@ glimpse(wine)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_title {
+#mkpcjdhran .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -128,7 +151,7 @@ glimpse(wine)</code></pre>
   border-bottom-width: 0;
 }
 
-#ikszmzaeoh .gt_subtitle {
+#mkpcjdhran .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -138,13 +161,13 @@ glimpse(wine)</code></pre>
   border-top-width: 0;
 }
 
-#ikszmzaeoh .gt_bottom_border {
+#mkpcjdhran .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_col_headings {
+#mkpcjdhran .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -159,7 +182,7 @@ glimpse(wine)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_col_heading {
+#mkpcjdhran .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -173,7 +196,7 @@ glimpse(wine)</code></pre>
   overflow-x: hidden;
 }
 
-#ikszmzaeoh .gt_column_spanner_outer {
+#mkpcjdhran .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -185,15 +208,15 @@ glimpse(wine)</code></pre>
   padding-right: 4px;
 }
 
-#ikszmzaeoh .gt_column_spanner_outer:first-child {
+#mkpcjdhran .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#ikszmzaeoh .gt_column_spanner_outer:last-child {
+#mkpcjdhran .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#ikszmzaeoh .gt_column_spanner {
+#mkpcjdhran .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -205,7 +228,7 @@ glimpse(wine)</code></pre>
   width: 100%;
 }
 
-#ikszmzaeoh .gt_group_heading {
+#mkpcjdhran .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -227,7 +250,7 @@ glimpse(wine)</code></pre>
   vertical-align: middle;
 }
 
-#ikszmzaeoh .gt_empty_group_heading {
+#mkpcjdhran .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -242,19 +265,19 @@ glimpse(wine)</code></pre>
   vertical-align: middle;
 }
 
-#ikszmzaeoh .gt_striped {
+#mkpcjdhran .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#ikszmzaeoh .gt_from_md > :first-child {
+#mkpcjdhran .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#ikszmzaeoh .gt_from_md > :last-child {
+#mkpcjdhran .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#ikszmzaeoh .gt_row {
+#mkpcjdhran .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -273,7 +296,7 @@ glimpse(wine)</code></pre>
   overflow-x: hidden;
 }
 
-#ikszmzaeoh .gt_stub {
+#mkpcjdhran .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -284,7 +307,7 @@ glimpse(wine)</code></pre>
   padding-left: 12px;
 }
 
-#ikszmzaeoh .gt_summary_row {
+#mkpcjdhran .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -294,7 +317,7 @@ glimpse(wine)</code></pre>
   padding-right: 5px;
 }
 
-#ikszmzaeoh .gt_first_summary_row {
+#mkpcjdhran .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -304,7 +327,7 @@ glimpse(wine)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_grand_summary_row {
+#mkpcjdhran .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -314,7 +337,7 @@ glimpse(wine)</code></pre>
   padding-right: 5px;
 }
 
-#ikszmzaeoh .gt_first_grand_summary_row {
+#mkpcjdhran .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -324,7 +347,7 @@ glimpse(wine)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_table_body {
+#mkpcjdhran .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -333,7 +356,7 @@ glimpse(wine)</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_footnotes {
+#mkpcjdhran .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -347,13 +370,13 @@ glimpse(wine)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_footnote {
+#mkpcjdhran .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#ikszmzaeoh .gt_sourcenotes {
+#mkpcjdhran .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -367,46 +390,46 @@ glimpse(wine)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#ikszmzaeoh .gt_sourcenote {
+#mkpcjdhran .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#ikszmzaeoh .gt_left {
+#mkpcjdhran .gt_left {
   text-align: left;
 }
 
-#ikszmzaeoh .gt_center {
+#mkpcjdhran .gt_center {
   text-align: center;
 }
 
-#ikszmzaeoh .gt_right {
+#mkpcjdhran .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#ikszmzaeoh .gt_font_normal {
+#mkpcjdhran .gt_font_normal {
   font-weight: normal;
 }
 
-#ikszmzaeoh .gt_font_bold {
+#mkpcjdhran .gt_font_bold {
   font-weight: bold;
 }
 
-#ikszmzaeoh .gt_font_italic {
+#mkpcjdhran .gt_font_italic {
   font-style: italic;
 }
 
-#ikszmzaeoh .gt_super {
+#mkpcjdhran .gt_super {
   font-size: 65%;
 }
 
-#ikszmzaeoh .gt_footnote_marks {
+#mkpcjdhran .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="ikszmzaeoh" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="mkpcjdhran" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -560,14 +583,14 @@ glimpse(wine)</code></pre>
     strip.text.x = element_blank()
   ) +
   scale_size(breaks = c(1, 2, 4, 6, 8))</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-4-1.png" width="384" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-5-1.png" width="384" /></p>
 <p>At a glance, it looks like the <code>temp</code> = warm and <code>contact</code> = yes is associated with higher <code>rating</code>s.</p>
 </div>
 <div id="the-cumulative-link-model" class="section level1">
 <h1>The cumulative link model</h1>
 <div id="theory" class="section level2">
 <h2>Theory</h2>
-<p>The ordinal response <span class="math inline">\(y_i\)</span> falls into response category <span class="math inline">\(j\)</span> (out of <span class="math inline">\(J\)</span> total) with proability <span class="math inline">\(\pi_{ij}\)</span>.
+<p>The ordinal response <span class="math inline">\(y_i\)</span> falls into response category <span class="math inline">\(j\)</span> (out of <span class="math inline">\(J\)</span> total) with probability <span class="math inline">\(\pi_{ij}\)</span>.
 The cumulative probabilities are defined:</p>
 <p><span class="math display">\[
 P(y_i \leq j) = \pi_{i1} + \dots + \pi_{ij}.
@@ -600,12 +623,12 @@ ggp(wine_prop, aes(x = rating, y = p)) +
       labs(x = &quot;j&quot;, y = &quot;logit(cumulative proportion)&quot;) +
       cowplot::theme_minimal_hgrid()
   )</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-5-1.png" width="960" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-6-1.png" width="960" /></p>
 <p>We will explore other links, but first the most common, the logit link, which is depicted in the right-most panel of the above figure:</p>
 <p><span class="math display">\[
 \text{logit} (P(y_i \leq j) = \log \frac{P(y_i \leq j)}{1 - P(y_i \leq j)}
 \]</span></p>
-<p>Note that the above function is defined for all but the last category, because <span class="math inline">\(1 - P(Y_i \leq j) = 1 - 1 = 0\)</span>.</p>
+<p>Note that the above function is defined for all but the last category <span class="math inline">\(j = J\)</span>, because <span class="math inline">\(1 - P(Y_i \leq J) = 1 - 1 = 0\)</span>.</p>
 <p>For the <code>wine</code> data, where we have <span class="math inline">\(J\)</span> = 5 rating categories, we will build up to the following mixed effects model:</p>
 <p><span class="math display">\[
 \begin{align}
@@ -613,12 +636,13 @@ ggp(wine_prop, aes(x = rating, y = p)) +
 i &amp;= 1, \dots n \; \; \; \; \; \; j = 1, \dots, J - 1
 \end{align}
 \]</span></p>
-<p>where <span class="math inline">\(\theta_j\)</span> is called the threshold parameter, or cutpoint, of category <span class="math inline">\(j\)</span>, which can also be thought of as <span class="math inline">\(J-1\)</span> = 4 intercepts.
+<p>where <span class="math inline">\(\theta_j\)</span> is called the threshold parameter, or cutpoint, of category <span class="math inline">\(j\)</span>.
+These thresholds can also be thought of as <span class="math inline">\(J-1\)</span> = 4 intercepts.
 Note that the fixed effect parameters <span class="math inline">\(\beta_1\)</span> and <span class="math inline">\(\beta_2\)</span> are independent of <span class="math inline">\(j\)</span>, so each <span class="math inline">\(\beta\)</span> has the same effect for each of the <span class="math inline">\(J-1\)</span> cumulative logits.
 The judge effects, which are also independent of <span class="math inline">\(j\)</span>, are assumed normal: <span class="math inline">\(u(\text{judge}_i) \sim N(0, \sigma_u^2)\)</span>.
 We are using the logit link because it is the most popular for this kind of model (and the one I am familiar with), but there are other options we will briefly explore later.</p>
 <p>The subtraction of terms in the above model is new to me.
-The main reason seems to be a choice of familiar interpretation: the larger the value of any independent term <span class="math inline">\(\beta x\)</span>, the smaller the thresholds <span class="math inline">\(\theta_j\)</span>, and therefore a larger probability of the a response falling into a category at the upper end of the scale.
+The main reason seems to be for familiar interpretation: the larger the value of any independent term <span class="math inline">\(\beta x\)</span>, the smaller the thresholds <span class="math inline">\(\theta_j\)</span>, and therefore a larger probability of the a response falling into a category at the upper end of the scale.
 This way, <span class="math inline">\(\beta\)</span> has the same <em>direction</em> of effect as in ordinary linear regression.</p>
 <p>We are essentially modeling a “chain” of logistic regressions where the binary response is “less than or equal to a certain level” vs “greater than that level”.
 In this case, with <span class="math inline">\(J\)</span> = 5, the thresholds <span class="math inline">\(\theta_j\)</span> are capturing the adjusted log-odds of observing:</p>
@@ -665,8 +689,8 @@ summary(clm_rating_contact)</code></pre>
 <p>The model gives us <span class="math inline">\(K - 1 = 4\)</span> threshold coefficients, as expected.
 The <span class="math inline">\(\beta_2\)</span> coefficient estimate was statistically significant (by a Wald test), and tells us that <code>contact</code> = yes <em>decreases</em> the thresholds <span class="math inline">\(\theta_j\)</span> by <span class="math inline">\(\beta_2\)</span> = 1.21 (because of the subtraction of model terms), and therefore is associated with <em>higher</em> <code>rating</code>s.</p>
 <p>The condition number of the Hessian for this model is 16.98.
-The primer says that larger values (like &gt; <code>1e4</code>) might indicate that the model is ill defined.</p>
-<p>It is nicely illustrative to compare this model to 4 separate logistic regressions with a dichomtized response:</p>
+The primer says that larger values (like &gt; <code>1e4</code>) might indicate that the model is ill-defined.</p>
+<p>It is nicely illustrative to compare this model to 4 separate logistic regressions with a dichotomized response:</p>
 <p><span class="math display">\[
 \begin{align}
 \text{logit} (p(y_i \leq 1)) = \theta_1 + \beta_2 \text{contact_i} \\
@@ -718,7 +742,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#nzyvfdbaas .gt_table {
+#bsydrpvhym .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -735,7 +759,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-color: #A8A8A8;
 }
 
-#nzyvfdbaas .gt_heading {
+#bsydrpvhym .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -746,7 +770,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_title {
+#bsydrpvhym .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -756,7 +780,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-width: 0;
 }
 
-#nzyvfdbaas .gt_subtitle {
+#bsydrpvhym .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -766,13 +790,13 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-width: 0;
 }
 
-#nzyvfdbaas .gt_bottom_border {
+#bsydrpvhym .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_col_headings {
+#bsydrpvhym .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -787,7 +811,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_col_heading {
+#bsydrpvhym .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -801,7 +825,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   overflow-x: hidden;
 }
 
-#nzyvfdbaas .gt_column_spanner_outer {
+#bsydrpvhym .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -813,15 +837,15 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 4px;
 }
 
-#nzyvfdbaas .gt_column_spanner_outer:first-child {
+#bsydrpvhym .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#nzyvfdbaas .gt_column_spanner_outer:last-child {
+#bsydrpvhym .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#nzyvfdbaas .gt_column_spanner {
+#bsydrpvhym .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -833,7 +857,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   width: 100%;
 }
 
-#nzyvfdbaas .gt_group_heading {
+#bsydrpvhym .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -855,7 +879,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   vertical-align: middle;
 }
 
-#nzyvfdbaas .gt_empty_group_heading {
+#bsydrpvhym .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -870,19 +894,19 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   vertical-align: middle;
 }
 
-#nzyvfdbaas .gt_striped {
+#bsydrpvhym .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#nzyvfdbaas .gt_from_md > :first-child {
+#bsydrpvhym .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#nzyvfdbaas .gt_from_md > :last-child {
+#bsydrpvhym .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#nzyvfdbaas .gt_row {
+#bsydrpvhym .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -901,7 +925,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   overflow-x: hidden;
 }
 
-#nzyvfdbaas .gt_stub {
+#bsydrpvhym .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -912,7 +936,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-left: 12px;
 }
 
-#nzyvfdbaas .gt_summary_row {
+#bsydrpvhym .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -922,7 +946,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 5px;
 }
 
-#nzyvfdbaas .gt_first_summary_row {
+#bsydrpvhym .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -932,7 +956,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_grand_summary_row {
+#bsydrpvhym .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -942,7 +966,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 5px;
 }
 
-#nzyvfdbaas .gt_first_grand_summary_row {
+#bsydrpvhym .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -952,7 +976,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_table_body {
+#bsydrpvhym .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -961,7 +985,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_footnotes {
+#bsydrpvhym .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -975,13 +999,13 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_footnote {
+#bsydrpvhym .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#nzyvfdbaas .gt_sourcenotes {
+#bsydrpvhym .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -995,46 +1019,46 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#nzyvfdbaas .gt_sourcenote {
+#bsydrpvhym .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#nzyvfdbaas .gt_left {
+#bsydrpvhym .gt_left {
   text-align: left;
 }
 
-#nzyvfdbaas .gt_center {
+#bsydrpvhym .gt_center {
   text-align: center;
 }
 
-#nzyvfdbaas .gt_right {
+#bsydrpvhym .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#nzyvfdbaas .gt_font_normal {
+#bsydrpvhym .gt_font_normal {
   font-weight: normal;
 }
 
-#nzyvfdbaas .gt_font_bold {
+#bsydrpvhym .gt_font_bold {
   font-weight: bold;
 }
 
-#nzyvfdbaas .gt_font_italic {
+#bsydrpvhym .gt_font_italic {
   font-style: italic;
 }
 
-#nzyvfdbaas .gt_super {
+#bsydrpvhym .gt_super {
   font-size: 65%;
 }
 
-#nzyvfdbaas .gt_footnote_marks {
+#bsydrpvhym .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="nzyvfdbaas" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="bsydrpvhym" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -1123,7 +1147,7 @@ summary(clm_rating_contact_temp)</code></pre>
 ## 3|4   3.4669     0.5978   5.800
 ## 4|5   5.0064     0.7309   6.850</code></pre>
 <p>Both fixed effects (<code>contact</code> = yes and <code>temp</code> = warm) are strongly associated with higher probability of higher ratings.
-The <code>summary()</code> function provides p values from Wald tests, but more accurate likelihood ratio tests can be done via the <code>drop1()</code> function, which evaluates each fixed effect while controlling the other:</p>
+The <code>summary</code> function provides p values from Wald tests, but more accurate likelihood ratio tests can be done via the <code>drop1</code> function, which evaluates each fixed effect while controlling the other:</p>
 <pre class="r"><code>drop1(clm_rating_contact_temp, test = &quot;Chisq&quot;)</code></pre>
 <pre><code>## Single term deletions
 ## 
@@ -1153,12 +1177,12 @@ add1(clm_rating_null, scope = ~ contact + temp, test = &quot;Chisq&quot;)</code>
 ## temp     1 194.03 23.4113 1.308e-06 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
-<p>Symmetric Wald confidence intervals can be extracted with <code>confint()</code> or with <code>broom::tidy()</code>:</p>
+<p>Symmetric Wald confidence intervals can be extracted with <code>confint</code> or with <code>broom::tidy</code>:</p>
 <pre class="r"><code>tidy(clm_rating_contact_temp, conf.int = T, conf.type = &quot;Wald&quot;) %&gt;%
   ggp(aes(y = term, x = estimate)) +
   geom_point() +
   geom_linerange(aes(xmin = conf.low, xmax = conf.high))</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-11-1.png" width="480" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-12-1.png" width="480" /></p>
 <p>In these types of analyses, we are often interested in the odds ratios.
 For the two categorical fixed effects, which have two levels each, the odds ratios <span class="math inline">\(y \leq j\)</span> comparing the two levels are:</p>
 <p><span class="math display">\[
@@ -1167,7 +1191,7 @@ For the two categorical fixed effects, which have two levels each, the odds rati
 \text{OR} &amp;= \frac{\gamma_j (\text{contact} = \text{yes})}{\gamma_j (\text{contact} = \text{no})} = \frac{\exp(\theta_j - \beta_1 \text{temp} - \beta_2 )}{\exp (\theta_j - \beta_1 \text{temp} - 0)}) = \exp(\beta_2)
 \end{align}
 \]</span></p>
-<p>where we have introducted the shorthand <span class="math inline">\(\gamma_j = \text{logit} (p(y \leq j))\)</span>.
+<p>where we have introduced the shorthand <span class="math inline">\(\gamma_j = \text{logit} (p(y \leq j))\)</span>.
 Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
 <pre class="r"><code>tidy(clm_rating_contact_temp, conf.int = T, conf.type = &quot;Wald&quot;) %&gt;%
   transmute(
@@ -1180,7 +1204,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#hrgyrskxrd .gt_table {
+#xukzmwvdss .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -1197,7 +1221,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-color: #A8A8A8;
 }
 
-#hrgyrskxrd .gt_heading {
+#xukzmwvdss .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -1208,7 +1232,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_title {
+#xukzmwvdss .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -1218,7 +1242,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-width: 0;
 }
 
-#hrgyrskxrd .gt_subtitle {
+#xukzmwvdss .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -1228,13 +1252,13 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-width: 0;
 }
 
-#hrgyrskxrd .gt_bottom_border {
+#xukzmwvdss .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_col_headings {
+#xukzmwvdss .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1249,7 +1273,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_col_heading {
+#xukzmwvdss .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1263,7 +1287,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   overflow-x: hidden;
 }
 
-#hrgyrskxrd .gt_column_spanner_outer {
+#xukzmwvdss .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1275,15 +1299,15 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 4px;
 }
 
-#hrgyrskxrd .gt_column_spanner_outer:first-child {
+#xukzmwvdss .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#hrgyrskxrd .gt_column_spanner_outer:last-child {
+#xukzmwvdss .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#hrgyrskxrd .gt_column_spanner {
+#xukzmwvdss .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -1295,7 +1319,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   width: 100%;
 }
 
-#hrgyrskxrd .gt_group_heading {
+#xukzmwvdss .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1317,7 +1341,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   vertical-align: middle;
 }
 
-#hrgyrskxrd .gt_empty_group_heading {
+#xukzmwvdss .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1332,19 +1356,19 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   vertical-align: middle;
 }
 
-#hrgyrskxrd .gt_striped {
+#xukzmwvdss .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#hrgyrskxrd .gt_from_md > :first-child {
+#xukzmwvdss .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#hrgyrskxrd .gt_from_md > :last-child {
+#xukzmwvdss .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#hrgyrskxrd .gt_row {
+#xukzmwvdss .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1363,7 +1387,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   overflow-x: hidden;
 }
 
-#hrgyrskxrd .gt_stub {
+#xukzmwvdss .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -1374,7 +1398,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-left: 12px;
 }
 
-#hrgyrskxrd .gt_summary_row {
+#xukzmwvdss .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1384,7 +1408,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 5px;
 }
 
-#hrgyrskxrd .gt_first_summary_row {
+#xukzmwvdss .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1394,7 +1418,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_grand_summary_row {
+#xukzmwvdss .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1404,7 +1428,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 5px;
 }
 
-#hrgyrskxrd .gt_first_grand_summary_row {
+#xukzmwvdss .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1414,7 +1438,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_table_body {
+#xukzmwvdss .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1423,7 +1447,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_footnotes {
+#xukzmwvdss .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1437,13 +1461,13 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_footnote {
+#xukzmwvdss .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#hrgyrskxrd .gt_sourcenotes {
+#xukzmwvdss .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1457,46 +1481,46 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#hrgyrskxrd .gt_sourcenote {
+#xukzmwvdss .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#hrgyrskxrd .gt_left {
+#xukzmwvdss .gt_left {
   text-align: left;
 }
 
-#hrgyrskxrd .gt_center {
+#xukzmwvdss .gt_center {
   text-align: center;
 }
 
-#hrgyrskxrd .gt_right {
+#xukzmwvdss .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#hrgyrskxrd .gt_font_normal {
+#xukzmwvdss .gt_font_normal {
   font-weight: normal;
 }
 
-#hrgyrskxrd .gt_font_bold {
+#xukzmwvdss .gt_font_bold {
   font-weight: bold;
 }
 
-#hrgyrskxrd .gt_font_italic {
+#xukzmwvdss .gt_font_italic {
   font-style: italic;
 }
 
-#hrgyrskxrd .gt_super {
+#xukzmwvdss .gt_super {
   font-size: 65%;
 }
 
-#hrgyrskxrd .gt_footnote_marks {
+#xukzmwvdss .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="hrgyrskxrd" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="xukzmwvdss" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -1603,7 +1627,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#rjsmrtizdg .gt_table {
+#parkzldygl .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -1620,7 +1644,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-color: #A8A8A8;
 }
 
-#rjsmrtizdg .gt_heading {
+#parkzldygl .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -1631,7 +1655,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_title {
+#parkzldygl .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -1641,7 +1665,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-width: 0;
 }
 
-#rjsmrtizdg .gt_subtitle {
+#parkzldygl .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -1651,13 +1675,13 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-width: 0;
 }
 
-#rjsmrtizdg .gt_bottom_border {
+#parkzldygl .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_col_headings {
+#parkzldygl .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1672,7 +1696,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_col_heading {
+#parkzldygl .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1686,7 +1710,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   overflow-x: hidden;
 }
 
-#rjsmrtizdg .gt_column_spanner_outer {
+#parkzldygl .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1698,15 +1722,15 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 4px;
 }
 
-#rjsmrtizdg .gt_column_spanner_outer:first-child {
+#parkzldygl .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#rjsmrtizdg .gt_column_spanner_outer:last-child {
+#parkzldygl .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#rjsmrtizdg .gt_column_spanner {
+#parkzldygl .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -1718,7 +1742,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   width: 100%;
 }
 
-#rjsmrtizdg .gt_group_heading {
+#parkzldygl .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1740,7 +1764,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   vertical-align: middle;
 }
 
-#rjsmrtizdg .gt_empty_group_heading {
+#parkzldygl .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1755,19 +1779,19 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   vertical-align: middle;
 }
 
-#rjsmrtizdg .gt_striped {
+#parkzldygl .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#rjsmrtizdg .gt_from_md > :first-child {
+#parkzldygl .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#rjsmrtizdg .gt_from_md > :last-child {
+#parkzldygl .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#rjsmrtizdg .gt_row {
+#parkzldygl .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1786,7 +1810,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   overflow-x: hidden;
 }
 
-#rjsmrtizdg .gt_stub {
+#parkzldygl .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -1797,7 +1821,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-left: 12px;
 }
 
-#rjsmrtizdg .gt_summary_row {
+#parkzldygl .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1807,7 +1831,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 5px;
 }
 
-#rjsmrtizdg .gt_first_summary_row {
+#parkzldygl .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1817,7 +1841,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_grand_summary_row {
+#parkzldygl .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1827,7 +1851,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 5px;
 }
 
-#rjsmrtizdg .gt_first_grand_summary_row {
+#parkzldygl .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1837,7 +1861,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_table_body {
+#parkzldygl .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1846,7 +1870,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_footnotes {
+#parkzldygl .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1860,13 +1884,13 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_footnote {
+#parkzldygl .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#rjsmrtizdg .gt_sourcenotes {
+#parkzldygl .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1880,46 +1904,46 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#rjsmrtizdg .gt_sourcenote {
+#parkzldygl .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#rjsmrtizdg .gt_left {
+#parkzldygl .gt_left {
   text-align: left;
 }
 
-#rjsmrtizdg .gt_center {
+#parkzldygl .gt_center {
   text-align: center;
 }
 
-#rjsmrtizdg .gt_right {
+#parkzldygl .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#rjsmrtizdg .gt_font_normal {
+#parkzldygl .gt_font_normal {
   font-weight: normal;
 }
 
-#rjsmrtizdg .gt_font_bold {
+#parkzldygl .gt_font_bold {
   font-weight: bold;
 }
 
-#rjsmrtizdg .gt_font_italic {
+#parkzldygl .gt_font_italic {
   font-style: italic;
 }
 
-#rjsmrtizdg .gt_super {
+#parkzldygl .gt_super {
   font-size: 65%;
 }
 
-#rjsmrtizdg .gt_footnote_marks {
+#parkzldygl .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="rjsmrtizdg" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="parkzldygl" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -1984,10 +2008,10 @@ In particular, the distance between thresholds is not equidistant:</p>
 \text{logit}(p(y_i \leq j)) &amp;= \theta_j - \beta_1 \text{temp}_i - \beta_2 \text{contact}_i - u( \text{judge}_i) \\
 i &amp;= 1, \dots n \; \; \; \; \; \; j = 1, \dots, J - 1
 \end{align}
-\]</span>
-where the judge effects are independent of <span class="math inline">\(j\)</span>, and assumed normal: <span class="math inline">\(u(\text{judge}_i) \sim N(0, \sigma_u^2)\)</span>.</p>
+\]</span></p>
+<p>where the judge effects are independent of <span class="math inline">\(j\)</span>, and assumed normal: <span class="math inline">\(u(\text{judge}_i) \sim N(0, \sigma_u^2)\)</span>.</p>
 <p>Each judge has 8 <code>rating</code>s each (two per combination of <code>temp</code> and <code>contact</code>).
-See if we can spot the <code>judge</code> variance:</p>
+See if we can spot the <code>judge</code> variance in a plot of <code>rating</code>s:</p>
 <pre class="r"><code>wine %&gt;%
   count(judge, rating) %&gt;%
   ggplot(aes(x = judge, y = rating)) +
@@ -1999,8 +2023,8 @@ See if we can spot the <code>judge</code> variance:</p>
   theme(legend.position = &quot;none&quot;) +
   scale_fill_viridis_c() +
   labs(title = &quot;Number of ratings by judge&quot;)</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
-<p>There is definitly some judge-specific variability in the perception of bitterness in wine.
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
+<p>There is definitely some judge-specific variability in the perception of bitterness of wine.
 <code>judge</code> 5, for instance, doesn’t stray far from <code>rating</code> = 3, while <code>judge</code> 7 didn’t consider any of the wines particularly bitter.</p>
 <p>Fit the model with <code>ordinal::clmm</code> and logit link:</p>
 <pre class="r"><code>clmm_rating_contact_temp &lt;-
@@ -2058,7 +2082,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#qcjtbyhczc .gt_table {
+#lovpenspbt .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -2075,7 +2099,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-color: #A8A8A8;
 }
 
-#qcjtbyhczc .gt_heading {
+#lovpenspbt .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -2086,7 +2110,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_title {
+#lovpenspbt .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -2096,7 +2120,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-width: 0;
 }
 
-#qcjtbyhczc .gt_subtitle {
+#lovpenspbt .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -2106,13 +2130,13 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-width: 0;
 }
 
-#qcjtbyhczc .gt_bottom_border {
+#lovpenspbt .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_col_headings {
+#lovpenspbt .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -2127,7 +2151,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_col_heading {
+#lovpenspbt .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -2141,7 +2165,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   overflow-x: hidden;
 }
 
-#qcjtbyhczc .gt_column_spanner_outer {
+#lovpenspbt .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -2153,15 +2177,15 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 4px;
 }
 
-#qcjtbyhczc .gt_column_spanner_outer:first-child {
+#lovpenspbt .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#qcjtbyhczc .gt_column_spanner_outer:last-child {
+#lovpenspbt .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#qcjtbyhczc .gt_column_spanner {
+#lovpenspbt .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -2173,7 +2197,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   width: 100%;
 }
 
-#qcjtbyhczc .gt_group_heading {
+#lovpenspbt .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -2195,7 +2219,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   vertical-align: middle;
 }
 
-#qcjtbyhczc .gt_empty_group_heading {
+#lovpenspbt .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -2210,19 +2234,19 @@ summary(clmm_rating_contact_temp)</code></pre>
   vertical-align: middle;
 }
 
-#qcjtbyhczc .gt_striped {
+#lovpenspbt .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#qcjtbyhczc .gt_from_md > :first-child {
+#lovpenspbt .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#qcjtbyhczc .gt_from_md > :last-child {
+#lovpenspbt .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#qcjtbyhczc .gt_row {
+#lovpenspbt .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2241,7 +2265,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   overflow-x: hidden;
 }
 
-#qcjtbyhczc .gt_stub {
+#lovpenspbt .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -2252,7 +2276,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-left: 12px;
 }
 
-#qcjtbyhczc .gt_summary_row {
+#lovpenspbt .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -2262,7 +2286,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 5px;
 }
 
-#qcjtbyhczc .gt_first_summary_row {
+#lovpenspbt .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2272,7 +2296,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_grand_summary_row {
+#lovpenspbt .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -2282,7 +2306,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 5px;
 }
 
-#qcjtbyhczc .gt_first_grand_summary_row {
+#lovpenspbt .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2292,7 +2316,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_table_body {
+#lovpenspbt .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -2301,7 +2325,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_footnotes {
+#lovpenspbt .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -2315,13 +2339,13 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_footnote {
+#lovpenspbt .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#qcjtbyhczc .gt_sourcenotes {
+#lovpenspbt .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -2335,46 +2359,46 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#qcjtbyhczc .gt_sourcenote {
+#lovpenspbt .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#qcjtbyhczc .gt_left {
+#lovpenspbt .gt_left {
   text-align: left;
 }
 
-#qcjtbyhczc .gt_center {
+#lovpenspbt .gt_center {
   text-align: center;
 }
 
-#qcjtbyhczc .gt_right {
+#lovpenspbt .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#qcjtbyhczc .gt_font_normal {
+#lovpenspbt .gt_font_normal {
   font-weight: normal;
 }
 
-#qcjtbyhczc .gt_font_bold {
+#lovpenspbt .gt_font_bold {
   font-weight: bold;
 }
 
-#qcjtbyhczc .gt_font_italic {
+#lovpenspbt .gt_font_italic {
   font-style: italic;
 }
 
-#qcjtbyhczc .gt_super {
+#lovpenspbt .gt_super {
   font-size: 65%;
 }
 
-#qcjtbyhczc .gt_footnote_marks {
+#lovpenspbt .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="qcjtbyhczc" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="lovpenspbt" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -2518,7 +2542,7 @@ We can produce “best guess” estimates for <code>judge</code> effects using <
   geom_point() +
   geom_linerange(aes(xmin = conf.low, xmax = conf.high)) +
   cowplot::theme_minimal_vgrid()</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-22-1.png" width="672" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-23-1.png" width="672" /></p>
 <div id="predictions" class="section level4">
 <h4>Predictions</h4>
 <p>There are different ways to extract predicted probabilities.
@@ -2554,7 +2578,7 @@ First, and most obviously, with the <code>predict</code> function:</p>
 ## 14 4      warm  yes     0.428 
 ## 15 5      warm  yes     0.233</code></pre>
 <p>This only gives us predictions for <code>rating</code>, <code>temp</code> and <code>contact</code> values which exist in the data.
-There is no <code>rating</code> &gt; 3 for <code>temp</code> cold and <code>contact</code> no, for example.
+There is no predicted probability for <code>rating</code> &gt; 3, <code>temp</code> cold and <code>contact</code> no, for example.
 Another way is to pre-specify which values we want to predict:</p>
 <pre class="r"><code>nd &lt;-
   crossing(
@@ -2569,24 +2593,25 @@ nd %&gt;%
   cowplot::theme_minimal_hgrid() +
   scale_y_continuous(expand = c(0, 0), labels = scales::percent) +
   labs(x = &quot;temp-contact&quot;)</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-24-1.png" width="480" /></p>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-25-1.png" width="480" /></p>
 <p>We can also get model-estimated cumulative probabilities by considering the model coefficients.
 For example, for a cold <code>temp</code> and <code>contact</code>, the cumulative probability of a bitterness <code>rating</code> <span class="math inline">\(j\)</span> or less:</p>
 <p><span class="math display">\[
 P(y_i \leq j) = \text{logit}^{-1} [\theta_j - \beta_2 \text{contact}_i]
 \]</span></p>
 <p>where we are considering the average judge (<span class="math inline">\(u(\text{judge}_i) = 0\)</span>).
-The inverse logit is <span class="math inline">\(\text{logit}^{-1}(x) = 1 / (1 + \exp(x))\)</span>, and can be calculated with <code>plogis</code> as a shorthand.
-We can subtract cumulative probabilites to get non-cumulative probabilities of a category <span class="math inline">\(j\)</span>, for example:</p>
+The inverse logit is <span class="math inline">\(\text{logit}^{-1}(x) = 1 / (1 + \exp(-x))\)</span>, and can be calculated with <code>plogis</code> as a shorthand (<code>brms::inv_logit_scaled</code> is another).
+We can subtract cumulative probabilities to get non-cumulative probabilities of a rating <span class="math inline">\(j\)</span>.
+For example, <span class="math inline">\(j\)</span> = 3:</p>
 <pre class="r"><code>plogis(clmm_rating_contact_temp$Theta[3] - clmm_rating_contact_temp$beta[2]) -
   plogis(clmm_rating_contact_temp$Theta[2] - clmm_rating_contact_temp$beta[2])</code></pre>
 <pre><code>## contactyes 
 ##  0.4960357</code></pre>
-<p>which matches the value calculated previously for <span class="math inline">\(j\)</span> = 3.</p>
+<p>which matches the value calculated previously using <code>predict</code>.</p>
 </div>
 <div id="choice-of-link-function" class="section level4">
 <h4>Choice of link function</h4>
-<p>So far, we have used the logit link (and briefly the probit link to compare to linear regression).
+<p>So far, we have used the logit link (and briefly the probit link to compare estimates with linear regression).
 The links available to <code>ordinal::clmm</code> are logit, probit, cloglog, loglog, and cauchit.</p>
 <p>We can fit the CLMM using all of these links and compare log-likelihoods:</p>
 <pre class="r"><code>wine %&gt;%
@@ -2660,560 +2685,122 @@ In terms of log likelihood, however, flexible always outperform equidistant thre
 </div>
 </div>
 </div>
-<div id="bayesian-regression" class="section level2">
-<h2>Bayesian regression</h2>
-<p>Load the <code>brms</code> package:</p>
-<pre class="r"><code>library(brms)
-# Detect and set the number of cores
-options(mc.cores = parallel::detectCores())</code></pre>
-<p>We will fit a null cumulative link mixed model, and models with the fixed effects with default priors:</p>
-<pre class="r"><code>f_rating_null &lt;- rating ~ 1 + (1|judge)
-f_rating_contact &lt;- rating ~ 1 + contact + (1|judge)
-f_rating_contact_temp &lt;- rating ~ 1 + contact + temp + (1|judge)
-get_prior(f_rating_contact_temp, data = wine, family = cumulative(&quot;logit&quot;))</code></pre>
-<pre><code>##                  prior     class       coef group resp dpar nlpar bound
-## 1                              b                                       
-## 2                              b contactyes                            
-## 3                              b   tempwarm                            
-## 4  student_t(3, 0, 10) Intercept                                       
-## 5                      Intercept          1                            
-## 6                      Intercept          2                            
-## 7                      Intercept          3                            
-## 8                      Intercept          4                            
-## 9  student_t(3, 0, 10)        sd                                       
-## 10                            sd            judge                      
-## 11                            sd  Intercept judge</code></pre>
-<p>First, the null model with no predictors:</p>
-<pre class="r"><code>brm_rating_null &lt;-
-  brm(
-    f_rating_null,
-    data = wine,
-    family = cumulative(&quot;logit&quot;),
-    sample_prior = TRUE,
-    file = here(&quot;data&quot;, &quot;ordinal_regression&quot;, &quot;brm_rating_null.rds&quot;)
-  )</code></pre>
-<p>We can visualize the two priors (on thresholds/Intercepts, and on SD of judge effects) with <code>brms:prior_samples</code>:</p>
-<pre class="r"><code>get_prior(f_rating_null, data = wine, family = cumulative(&quot;logit&quot;))</code></pre>
-<pre><code>##                 prior     class      coef group resp dpar nlpar bound
-## 1 student_t(3, 0, 10) Intercept                                      
-## 2                     Intercept         1                            
-## 3                     Intercept         2                            
-## 4                     Intercept         3                            
-## 5                     Intercept         4                            
-## 6 student_t(3, 0, 10)        sd                                      
-## 7                            sd           judge                      
-## 8                            sd Intercept judge</code></pre>
-<pre class="r"><code>p1 &lt;-
-  prior_samples(brm_rating_null) %&gt;%
-  gather(term, value) %&gt;%
-  ggp(aes(x = value)) +
-  geom_density(size = 1) +
-  geom_density(
-    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
-                  prior = &quot;student_t(3, 0, 10)&quot;, term = &quot;Intercept&quot;),
-    aes(x, color = prior), size = 1
-  ) +
-  geom_density(
-    data = tibble(x = rstudent_t(n = 4000, df = 3, mu = 0, sigma = 10),
-                  prior = &quot;abs(student_t(3, 0, 10))&quot;, term = &quot;sd_judge&quot;),
-    aes(abs(x), color = prior), size = 1,
-  ) +
-  facet_wrap(~term, scales = &quot;free&quot;) +
-  cowplot::theme_minimal_vgrid() +
-  theme(axis.text.y = element_blank())
-p1 +
-  (p1 + coord_cartesian(xlim = c(-10, 20))) +
-  plot_layout(ncol = 1, guides = &quot;collect&quot;)</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-32-1.png" width="480" /></p>
-<p>Note that, since a standard deviation can’t be negative, <code>brms</code> automatically takes the absolute value of the defualt <code>student_t(3, 0, 10)</code> prior.</p>
-<p>These are obviously very uninformative priors.
-For instance, Intercepts (aka thresholds <span class="math inline">\(\theta_j\)</span>) between -20 and +20 correspond to the following probabilities:</p>
-<pre class="r"><code>tibble(theta = seq(-20, 20)) %&gt;%
-  mutate(p = inv_logit_scaled(theta)) %&gt;%
-  ggp(aes(x = theta, y = p)) +
-  geom_line(size = 1)</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-33-1.png" width="672" /></p>
-<p>So any prior values of, say, -10 are assigning essentially zero cumulative probability for a level <span class="math inline">\(\leq j\)</span>.</p>
-<p>Now that we’ve thought about our (default) prior assumptions, investigate the chains:</p>
-<pre class="r"><code>plot(brm_rating_null)</code></pre>
-<p><img src="/post/2020-03-10-learning-ordinal-regression-in-r_files/figure-html/unnamed-chunk-34-1.png" width="672" /></p>
-<p>The Intercept trace plots look good to me.
-There are some spikes in <code>sd_judge__Intercept</code>, but not enough to be concerning.</p>
-<p>Print the model estimates:</p>
-<pre class="r"><code>brm_rating_null</code></pre>
-<pre><code>##  Family: cumulative 
-##   Links: mu = logit; disc = identity 
-## Formula: rating ~ 1 + (1 | judge) 
-##    Data: wine (Number of observations: 72) 
-## Samples: 4 chains, each with iter = 2000; warmup = 1000; thin = 1;
-##          total post-warmup samples = 4000
-## 
-## Group-Level Effects: 
-## ~judge (Number of levels: 9) 
-##               Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
-## sd(Intercept)     0.83      0.47     0.09     1.90 1.00     1100     1213
-## 
-## Population-Level Effects: 
-##              Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
-## Intercept[1]    -2.88      0.60    -4.13    -1.81 1.00     1704     2153
-## Intercept[2]    -0.55      0.40    -1.37     0.26 1.00     2201     2754
-## Intercept[3]     1.16      0.43     0.35     2.09 1.00     2249     2615
-## Intercept[4]     2.53      0.54     1.57     3.70 1.00     2396     2959
-## 
-## Samples were drawn using sampling(NUTS). For each parameter, Eff.Sample 
-## is a crude measure of effective sample size, and Rhat is the potential 
-## scale reduction factor on split chains (at convergence, Rhat = 1).</code></pre>
-<p>The <code>Rhat</code> values are also a good sign of model convergence.
-Compare our null Bayesian model estimates to the frequentist estimates:</p>
-<pre class="r"><code># Can&#39;t figure out how to extract random effect SDs from a clmm model, use clmm2
-clmm2_rating_null &lt;-
-  clmm2(
-    rating ~ 1, random = judge,
-    data = wine, link = &quot;logistic&quot;, Hess = TRUE
-  )
-# Unfortunately, clmm2 doesn&#39;t have a broom::tidy() function
-summary(clmm2_rating_null) %&gt;%
-  coef() %&gt;%
-  as_tibble() %&gt;%
-  mutate(term = str_c(&quot;b_Intercept[&quot;, 1:4, &quot;]&quot;)) %&gt;%
-  bind_rows(
-    tibble(
-      Estimate = as.numeric(clmm2_rating_null$stDev),
-      term = &quot;sd_judge__Intercept&quot;
-    )
-  ) %&gt;%
-  janitor::clean_names() %&gt;%
-  left_join(
-    tidy(brm_rating_null),
-    by = &quot;term&quot;
-  ) %&gt;%
-  select(term, everything()) %&gt;%
-  mutate(
-    pr_z = scales::pvalue(pr_z),
-    across(is.numeric, ~round(., 2))
-  ) %&gt;%
-  gt() %&gt;%
-  tab_spanner(
-    label = &quot;ordinal::clmm&quot;,
-    columns = vars(estimate.x, std_error, z_value, pr_z)
-  ) %&gt;%
-  tab_spanner(
-    label = &quot;brms::brm&quot;,
-    columns = vars(estimate.y, std.error, lower, upper)
-  )</code></pre>
-<style>html {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
-}
-
-#mybjnzprat .gt_table {
-  display: table;
-  border-collapse: collapse;
-  margin-left: auto;
-  margin-right: auto;
-  color: #333333;
-  font-size: 16px;
-  background-color: #FFFFFF;
-  width: auto;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #A8A8A8;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #A8A8A8;
-}
-
-#mybjnzprat .gt_heading {
-  background-color: #FFFFFF;
-  border-bottom-color: #FFFFFF;
-  border-left-style: hidden;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: hidden;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_title {
-  color: #333333;
-  font-size: 125%;
-  font-weight: initial;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  border-bottom-color: #FFFFFF;
-  border-bottom-width: 0;
-}
-
-#mybjnzprat .gt_subtitle {
-  color: #333333;
-  font-size: 85%;
-  font-weight: initial;
-  padding-top: 0;
-  padding-bottom: 4px;
-  border-top-color: #FFFFFF;
-  border-top-width: 0;
-}
-
-#mybjnzprat .gt_bottom_border {
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_col_headings {
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_col_heading {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: normal;
-  text-transform: inherit;
-  vertical-align: bottom;
-  padding-top: 5px;
-  padding-bottom: 6px;
-  padding-left: 5px;
-  padding-right: 5px;
-  overflow-x: hidden;
-}
-
-#mybjnzprat .gt_column_spanner_outer {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: normal;
-  text-transform: inherit;
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: 4px;
-  padding-right: 4px;
-}
-
-#mybjnzprat .gt_column_spanner_outer:first-child {
-  padding-left: 0;
-}
-
-#mybjnzprat .gt_column_spanner_outer:last-child {
-  padding-right: 0;
-}
-
-#mybjnzprat .gt_column_spanner {
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  vertical-align: bottom;
-  padding-top: 5px;
-  padding-bottom: 6px;
-  overflow-x: hidden;
-  display: inline-block;
-  width: 100%;
-}
-
-#mybjnzprat .gt_group_heading {
-  padding: 8px;
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  text-transform: inherit;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-  vertical-align: middle;
-}
-
-#mybjnzprat .gt_empty_group_heading {
-  padding: 0.5px;
-  color: #333333;
-  background-color: #FFFFFF;
-  font-size: 100%;
-  font-weight: initial;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  vertical-align: middle;
-}
-
-#mybjnzprat .gt_striped {
-  background-color: rgba(128, 128, 128, 0.05);
-}
-
-#mybjnzprat .gt_from_md > :first-child {
-  margin-top: 0;
-}
-
-#mybjnzprat .gt_from_md > :last-child {
-  margin-bottom: 0;
-}
-
-#mybjnzprat .gt_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  margin: 10px;
-  border-top-style: solid;
-  border-top-width: 1px;
-  border-top-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 1px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 1px;
-  border-right-color: #D3D3D3;
-  vertical-align: middle;
-  overflow-x: hidden;
-}
-
-#mybjnzprat .gt_stub {
-  color: #333333;
-  background-color: #FFFFFF;
-  font-weight: initial;
-  text-transform: inherit;
-  border-right-style: solid;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-  padding-left: 12px;
-}
-
-#mybjnzprat .gt_summary_row {
-  color: #333333;
-  background-color: #FFFFFF;
-  text-transform: inherit;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#mybjnzprat .gt_first_summary_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_grand_summary_row {
-  color: #333333;
-  background-color: #FFFFFF;
-  text-transform: inherit;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-}
-
-#mybjnzprat .gt_first_grand_summary_row {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-left: 5px;
-  padding-right: 5px;
-  border-top-style: double;
-  border-top-width: 6px;
-  border-top-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_table_body {
-  border-top-style: solid;
-  border-top-width: 2px;
-  border-top-color: #D3D3D3;
-  border-bottom-style: solid;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_footnotes {
-  color: #333333;
-  background-color: #FFFFFF;
-  border-bottom-style: none;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 2px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_footnote {
-  margin: 0px;
-  font-size: 90%;
-  padding: 4px;
-}
-
-#mybjnzprat .gt_sourcenotes {
-  color: #333333;
-  background-color: #FFFFFF;
-  border-bottom-style: none;
-  border-bottom-width: 2px;
-  border-bottom-color: #D3D3D3;
-  border-left-style: none;
-  border-left-width: 2px;
-  border-left-color: #D3D3D3;
-  border-right-style: none;
-  border-right-width: 2px;
-  border-right-color: #D3D3D3;
-}
-
-#mybjnzprat .gt_sourcenote {
-  font-size: 90%;
-  padding: 4px;
-}
-
-#mybjnzprat .gt_left {
-  text-align: left;
-}
-
-#mybjnzprat .gt_center {
-  text-align: center;
-}
-
-#mybjnzprat .gt_right {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-#mybjnzprat .gt_font_normal {
-  font-weight: normal;
-}
-
-#mybjnzprat .gt_font_bold {
-  font-weight: bold;
-}
-
-#mybjnzprat .gt_font_italic {
-  font-style: italic;
-}
-
-#mybjnzprat .gt_super {
-  font-size: 65%;
-}
-
-#mybjnzprat .gt_footnote_marks {
-  font-style: italic;
-  font-size: 65%;
-}
-</style>
-<div id="mybjnzprat" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
-  
-  <thead class="gt_col_headings">
-    <tr>
-      <th class="gt_col_heading gt_center gt_columns_bottom_border" rowspan="2" colspan="1">term</th>
-      <th class="gt_center gt_columns_top_border gt_column_spanner_outer" rowspan="1" colspan="4">
-        <span class="gt_column_spanner">ordinal::clmm</span>
-      </th>
-      <th class="gt_center gt_columns_top_border gt_column_spanner_outer" rowspan="1" colspan="4">
-        <span class="gt_column_spanner">brms::brm</span>
-      </th>
-    </tr>
-    <tr>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">estimate.x</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">std_error</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">z_value</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">pr_z</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">estimate.y</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">std.error</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">lower</th>
-      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">upper</th>
-    </tr>
-  </thead>
-  <tbody class="gt_table_body">
-    <tr>
-      <td class="gt_row gt_left">b_Intercept[1]</td>
-      <td class="gt_row gt_right">-2.72</td>
-      <td class="gt_row gt_right">0.52</td>
-      <td class="gt_row gt_right">-5.25</td>
-      <td class="gt_row gt_left">&lt;0.001</td>
-      <td class="gt_row gt_right">-2.88</td>
-      <td class="gt_row gt_right">0.60</td>
-      <td class="gt_row gt_right">-3.91</td>
-      <td class="gt_row gt_right">-1.95</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left gt_striped">b_Intercept[2]</td>
-      <td class="gt_row gt_right gt_striped">-0.54</td>
-      <td class="gt_row gt_right gt_striped">0.32</td>
-      <td class="gt_row gt_right gt_striped">-1.72</td>
-      <td class="gt_row gt_left gt_striped">0.085</td>
-      <td class="gt_row gt_right gt_striped">-0.55</td>
-      <td class="gt_row gt_right gt_striped">0.40</td>
-      <td class="gt_row gt_right gt_striped">-1.21</td>
-      <td class="gt_row gt_right gt_striped">0.11</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">b_Intercept[3]</td>
-      <td class="gt_row gt_right">1.10</td>
-      <td class="gt_row gt_right">0.34</td>
-      <td class="gt_row gt_right">3.24</td>
-      <td class="gt_row gt_left">0.001</td>
-      <td class="gt_row gt_right">1.16</td>
-      <td class="gt_row gt_right">0.43</td>
-      <td class="gt_row gt_right">0.50</td>
-      <td class="gt_row gt_right">1.89</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left gt_striped">b_Intercept[4]</td>
-      <td class="gt_row gt_right gt_striped">2.35</td>
-      <td class="gt_row gt_right gt_striped">0.46</td>
-      <td class="gt_row gt_right gt_striped">5.13</td>
-      <td class="gt_row gt_left gt_striped">&lt;0.001</td>
-      <td class="gt_row gt_right gt_striped">2.53</td>
-      <td class="gt_row gt_right gt_striped">0.54</td>
-      <td class="gt_row gt_right gt_striped">1.74</td>
-      <td class="gt_row gt_right gt_striped">3.45</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">sd_judge__Intercept</td>
-      <td class="gt_row gt_right">0.57</td>
-      <td class="gt_row gt_right">NA</td>
-      <td class="gt_row gt_right">NA</td>
-      <td class="gt_row gt_left">NA</td>
-      <td class="gt_row gt_right">0.83</td>
-      <td class="gt_row gt_right">0.47</td>
-      <td class="gt_row gt_right">0.16</td>
-      <td class="gt_row gt_right">1.69</td>
-    </tr>
-  </tbody>
-  
-  
-</table></div>
-<p>Estimates are pretty close, even with our naive priors.</p>
-<p>So what are reasonable priors for this kind of analysis?
-My go-to resource for this kind of thing is <a href="https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations">this page from the stan wiki</a>, but under the “Prior for cutpoints in ordered logit or probit regression”, they say “Need to flesh out this section with examples.”</p>
 </div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>Thanks to detailed documentation, fitting cumulative link (mixed) models is very easy with <code>ordinal</code>.
+Here, we worked through examples using <code>wine</code> bitterness ratings from multiple judges</p>
 </div>
-<div id="references" class="section level1 unnumbered">
+<div id="session-info" class="section level1">
+<h1>Session info</h1>
+<pre class="r"><code>devtools::session_info()</code></pre>
+<pre><code>## - Session info ---------------------------------------------------------------
+##  setting  value                       
+##  version  R version 3.6.2 (2019-12-12)
+##  os       Windows 10 x64              
+##  system   x86_64, mingw32             
+##  ui       RTerm                       
+##  language (EN)                        
+##  collate  English_Canada.1252         
+##  ctype    English_Canada.1252         
+##  tz       America/Curacao             
+##  date     2020-03-15                  
+## 
+## - Packages -------------------------------------------------------------------
+##  package      * version     date       lib source                          
+##  assertthat     0.2.1       2019-03-21 [1] CRAN (R 3.6.0)                  
+##  backports      1.1.5       2019-10-02 [1] CRAN (R 3.6.1)                  
+##  blogdown       0.18        2020-03-04 [1] CRAN (R 3.6.2)                  
+##  bookdown       0.18        2020-03-05 [1] CRAN (R 3.6.2)                  
+##  broom        * 0.5.4       2020-01-27 [1] CRAN (R 3.6.2)                  
+##  callr          3.2.0       2019-03-15 [1] CRAN (R 3.6.0)                  
+##  cellranger     1.1.0       2016-07-27 [1] CRAN (R 3.6.0)                  
+##  checkmate      1.9.3       2019-05-03 [1] CRAN (R 3.6.0)                  
+##  cli            2.0.2       2020-02-28 [1] CRAN (R 3.6.3)                  
+##  colorspace     1.4-1       2019-03-18 [1] CRAN (R 3.6.0)                  
+##  cowplot        1.0.0       2019-07-11 [1] CRAN (R 3.6.1)                  
+##  crayon         1.3.4       2017-09-16 [1] CRAN (R 3.6.0)                  
+##  DBI            1.0.0       2018-05-02 [1] CRAN (R 3.6.0)                  
+##  dbplyr         1.4.2       2019-06-17 [1] CRAN (R 3.6.2)                  
+##  desc           1.2.0       2018-05-01 [1] CRAN (R 3.6.0)                  
+##  devtools       2.0.2       2019-04-08 [1] CRAN (R 3.6.0)                  
+##  digest         0.6.25      2020-02-23 [1] CRAN (R 3.6.2)                  
+##  dplyr        * 0.8.99.9000 2020-03-11 [1] Github (tidyverse/dplyr@e1f32c8)
+##  ellipsis       0.3.0       2019-09-20 [1] CRAN (R 3.6.1)                  
+##  evaluate       0.13        2019-02-12 [1] CRAN (R 3.6.0)                  
+##  fansi          0.4.1       2020-01-08 [1] CRAN (R 3.6.2)                  
+##  farver         2.0.3       2020-01-16 [1] CRAN (R 3.6.2)                  
+##  forcats      * 0.4.0       2019-02-17 [1] CRAN (R 3.6.0)                  
+##  fs             1.3.1       2019-05-06 [1] CRAN (R 3.6.0)                  
+##  generics       0.0.2       2018-11-29 [1] CRAN (R 3.6.0)                  
+##  ggplot2      * 3.3.0       2020-03-05 [1] CRAN (R 3.6.2)                  
+##  glue           1.3.2       2020-03-11 [1] Github (tidyverse/glue@5010cc6) 
+##  gt           * 0.1.0       2020-02-25 [1] Github (rstudio/gt@9782e79)     
+##  gtable         0.3.0       2019-03-25 [1] CRAN (R 3.6.0)                  
+##  haven          2.2.0       2019-11-08 [1] CRAN (R 3.6.2)                  
+##  here         * 0.1         2017-05-28 [1] CRAN (R 3.6.0)                  
+##  hms            0.5.3       2020-01-08 [1] CRAN (R 3.6.2)                  
+##  htmltools      0.3.6       2017-04-28 [1] CRAN (R 3.6.0)                  
+##  httr           1.4.1       2019-08-05 [1] CRAN (R 3.6.2)                  
+##  jsonlite       1.6.1       2020-02-02 [1] CRAN (R 3.6.2)                  
+##  knitr          1.28        2020-02-06 [1] CRAN (R 3.6.2)                  
+##  labeling       0.3         2014-08-23 [1] CRAN (R 3.6.0)                  
+##  lattice        0.20-38     2018-11-04 [2] CRAN (R 3.6.2)                  
+##  lifecycle      0.2.0       2020-03-06 [1] CRAN (R 3.6.2)                  
+##  lubridate      1.7.4       2018-04-11 [1] CRAN (R 3.6.0)                  
+##  magrittr       1.5         2014-11-22 [1] CRAN (R 3.6.0)                  
+##  MASS           7.3-51.4    2019-03-31 [2] CRAN (R 3.6.2)                  
+##  Matrix         1.2-18      2019-11-27 [2] CRAN (R 3.6.2)                  
+##  memoise        1.1.0       2017-04-21 [1] CRAN (R 3.6.0)                  
+##  modelr         0.1.5       2019-08-08 [1] CRAN (R 3.6.2)                  
+##  munsell        0.5.0       2018-06-12 [1] CRAN (R 3.6.0)                  
+##  nlme           3.1-140     2019-05-12 [1] CRAN (R 3.6.0)                  
+##  numDeriv       2016.8-1.1  2019-06-06 [1] CRAN (R 3.6.0)                  
+##  ordinal      * 2019.12-10  2019-12-15 [1] CRAN (R 3.6.3)                  
+##  patchwork    * 1.0.0       2019-12-01 [1] CRAN (R 3.6.2)                  
+##  pillar         1.4.3       2019-12-20 [1] CRAN (R 3.6.2)                  
+##  pkgbuild       1.0.3       2019-03-20 [1] CRAN (R 3.6.0)                  
+##  pkgconfig      2.0.3       2019-09-22 [1] CRAN (R 3.6.1)                  
+##  pkgload        1.0.2       2018-10-29 [1] CRAN (R 3.6.0)                  
+##  prettyunits    1.0.2       2015-07-13 [1] CRAN (R 3.6.0)                  
+##  processx       3.3.0       2019-03-10 [1] CRAN (R 3.6.0)                  
+##  ps             1.3.0       2018-12-21 [1] CRAN (R 3.6.0)                  
+##  purrr        * 0.3.3       2019-10-18 [1] CRAN (R 3.6.2)                  
+##  R6             2.4.1       2019-11-12 [1] CRAN (R 3.6.1)                  
+##  RColorBrewer   1.1-2       2014-12-07 [1] CRAN (R 3.6.0)                  
+##  Rcpp           1.0.3       2019-11-08 [1] CRAN (R 3.6.1)                  
+##  readr        * 1.3.1       2018-12-21 [1] CRAN (R 3.6.0)                  
+##  readxl         1.3.1       2019-03-13 [1] CRAN (R 3.6.0)                  
+##  remotes        2.0.4       2019-04-10 [1] CRAN (R 3.6.0)                  
+##  reprex         0.3.0       2019-05-16 [1] CRAN (R 3.6.2)                  
+##  rlang          0.4.5       2020-03-01 [1] CRAN (R 3.6.2)                  
+##  rmarkdown      2.1         2020-01-20 [1] CRAN (R 3.6.2)                  
+##  rprojroot      1.3-2       2018-01-03 [1] CRAN (R 3.6.0)                  
+##  rstudioapi     0.11        2020-02-07 [1] CRAN (R 3.6.2)                  
+##  rvest          0.3.5       2019-11-08 [1] CRAN (R 3.6.2)                  
+##  sass           0.1.0.9000  2019-05-07 [1] Github (rstudio/sass@c3ba17c)   
+##  scales         1.1.0       2019-11-18 [1] CRAN (R 3.6.1)                  
+##  sessioninfo    1.1.1       2018-11-05 [1] CRAN (R 3.6.0)                  
+##  stringi        1.4.6       2020-02-17 [1] CRAN (R 3.6.2)                  
+##  stringr      * 1.4.0       2019-02-10 [1] CRAN (R 3.6.0)                  
+##  testthat       2.3.0       2019-11-05 [1] CRAN (R 3.6.1)                  
+##  tibble       * 2.1.3       2019-06-06 [1] CRAN (R 3.6.1)                  
+##  tidyr        * 1.0.2       2020-01-24 [1] CRAN (R 3.6.2)                  
+##  tidyselect     1.0.0       2020-01-27 [1] CRAN (R 3.6.2)                  
+##  tidyverse    * 1.3.0       2019-11-21 [1] CRAN (R 3.6.3)                  
+##  ucminf         1.1-4       2016-08-18 [1] CRAN (R 3.6.0)                  
+##  usethis        1.5.1       2019-07-04 [1] CRAN (R 3.6.3)                  
+##  utf8           1.1.4       2018-05-24 [1] CRAN (R 3.6.0)                  
+##  vctrs          0.2.99.9010 2020-03-11 [1] Github (r-lib/vctrs@63b2712)    
+##  viridisLite    0.3.0       2018-02-01 [1] CRAN (R 3.6.0)                  
+##  withr          2.1.2       2018-03-15 [1] CRAN (R 3.6.0)                  
+##  xfun           0.12        2020-01-13 [1] CRAN (R 3.6.3)                  
+##  xml2           1.2.2       2019-08-09 [1] CRAN (R 3.6.2)                  
+##  yaml           2.2.0       2018-07-25 [1] CRAN (R 3.6.0)                  
+## 
+## [1] D:/Taylor/Documents/R/win-library/3.6
+## [2] C:/Program Files/R/R-3.6.2/library</code></pre>
+</div>
+<div id="references" class="section level1">
 <h1>References</h1>
-<div id="refs" class="references hanging-indent">
-<div id="ref-Randall1989">
-<p>Randall, J. 1989. “The Analysis of Sensory Data by Generalised Linear Model.” <em>Biometrical Journal</em> 7: 781–93.</p>
-</div>
-</div>
 </div>
