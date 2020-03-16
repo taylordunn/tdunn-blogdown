@@ -448,7 +448,7 @@ wine %>%
 There is definitely some judge-specific variability in the perception of bitterness of wine.
 `judge` 5, for instance, doesn't stray far from `rating` = 3, while `judge` 7 didn't consider any of the wines particularly bitter.
 
-Fit the model with `ordinal::clmm` and logit link:
+Fit the full model with `ordinal::clmm` and logit link:
 
 ```{r}
 clmm_rating_contact_temp <-
