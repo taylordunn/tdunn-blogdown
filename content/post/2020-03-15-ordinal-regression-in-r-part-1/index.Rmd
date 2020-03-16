@@ -9,18 +9,7 @@ tags:
   - rstats
   - regression
   - frequentist
-references:
-- id: Randall1989
-  title: The analysis of sensory data by generalised linear model.
-  author:
-  - family: Randall
-    given: J
-  container-title: Biometrical journal
-  volume: 7
-  page: 781-793
-  type: article-journal
-  issued:
-    year: 1989
+bibliography: references.bib
 ---
 
 The purpose of this post is to learn about ordinal regression models (a.k.a. cumulative link, proportional odds, ordered logit models, etc.) and practice their implementation.
@@ -59,7 +48,7 @@ wine <- as_tibble(wine)
 glimpse(wine)
 ```
 
-`wine` is a data set of wine bitterness ratings from multiple judges.
+`wine` is a data set from @Randall1989 of wine bitterness ratings from multiple judges.
 The variables are as follows:
 
 * Outcome:
