@@ -9,18 +9,7 @@ tags:
   - rstats
   - regression
   - frequentist
-references:
-- id: Randall1989
-  title: The analysis of sensory data by generalised linear model.
-  author:
-  - family: Randall
-    given: J
-  container-title: Biometrical journal
-  volume: 7
-  page: 781-793
-  type: article-journal
-  issued:
-    year: 1989
+bibliography: references.bib
 ---
 
 <script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
@@ -76,7 +65,7 @@ glimpse(wine)</code></pre>
 ## $ contact  &lt;fct&gt; no, no, yes, yes, no, no, yes, yes, no, no, yes, yes, no, ...
 ## $ bottle   &lt;fct&gt; 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4...
 ## $ judge    &lt;fct&gt; 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3...</code></pre>
-<p><code>wine</code> is a data set of wine bitterness ratings from multiple judges.
+<p><code>wine</code> is a data set from <span class="citation">Randall (1989)</span> of wine bitterness ratings from multiple judges.
 The variables are as follows:</p>
 <ul>
 <li>Outcome:
@@ -113,7 +102,7 @@ The variables are as follows:</p>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#hquyyyprmx .gt_table {
+#wmoazwlmnn .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -130,7 +119,7 @@ The variables are as follows:</p>
   border-bottom-color: #A8A8A8;
 }
 
-#hquyyyprmx .gt_heading {
+#wmoazwlmnn .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -141,7 +130,7 @@ The variables are as follows:</p>
   border-right-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_title {
+#wmoazwlmnn .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -151,7 +140,7 @@ The variables are as follows:</p>
   border-bottom-width: 0;
 }
 
-#hquyyyprmx .gt_subtitle {
+#wmoazwlmnn .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -161,13 +150,13 @@ The variables are as follows:</p>
   border-top-width: 0;
 }
 
-#hquyyyprmx .gt_bottom_border {
+#wmoazwlmnn .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_col_headings {
+#wmoazwlmnn .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -182,7 +171,7 @@ The variables are as follows:</p>
   border-right-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_col_heading {
+#wmoazwlmnn .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -196,7 +185,7 @@ The variables are as follows:</p>
   overflow-x: hidden;
 }
 
-#hquyyyprmx .gt_column_spanner_outer {
+#wmoazwlmnn .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -208,15 +197,15 @@ The variables are as follows:</p>
   padding-right: 4px;
 }
 
-#hquyyyprmx .gt_column_spanner_outer:first-child {
+#wmoazwlmnn .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#hquyyyprmx .gt_column_spanner_outer:last-child {
+#wmoazwlmnn .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#hquyyyprmx .gt_column_spanner {
+#wmoazwlmnn .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -228,7 +217,7 @@ The variables are as follows:</p>
   width: 100%;
 }
 
-#hquyyyprmx .gt_group_heading {
+#wmoazwlmnn .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -250,7 +239,7 @@ The variables are as follows:</p>
   vertical-align: middle;
 }
 
-#hquyyyprmx .gt_empty_group_heading {
+#wmoazwlmnn .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -265,19 +254,19 @@ The variables are as follows:</p>
   vertical-align: middle;
 }
 
-#hquyyyprmx .gt_striped {
+#wmoazwlmnn .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#hquyyyprmx .gt_from_md > :first-child {
+#wmoazwlmnn .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#hquyyyprmx .gt_from_md > :last-child {
+#wmoazwlmnn .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#hquyyyprmx .gt_row {
+#wmoazwlmnn .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -296,7 +285,7 @@ The variables are as follows:</p>
   overflow-x: hidden;
 }
 
-#hquyyyprmx .gt_stub {
+#wmoazwlmnn .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -307,7 +296,7 @@ The variables are as follows:</p>
   padding-left: 12px;
 }
 
-#hquyyyprmx .gt_summary_row {
+#wmoazwlmnn .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -317,7 +306,7 @@ The variables are as follows:</p>
   padding-right: 5px;
 }
 
-#hquyyyprmx .gt_first_summary_row {
+#wmoazwlmnn .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -327,7 +316,7 @@ The variables are as follows:</p>
   border-top-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_grand_summary_row {
+#wmoazwlmnn .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -337,7 +326,7 @@ The variables are as follows:</p>
   padding-right: 5px;
 }
 
-#hquyyyprmx .gt_first_grand_summary_row {
+#wmoazwlmnn .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -347,7 +336,7 @@ The variables are as follows:</p>
   border-top-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_table_body {
+#wmoazwlmnn .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -356,7 +345,7 @@ The variables are as follows:</p>
   border-bottom-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_footnotes {
+#wmoazwlmnn .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -370,13 +359,13 @@ The variables are as follows:</p>
   border-right-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_footnote {
+#wmoazwlmnn .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#hquyyyprmx .gt_sourcenotes {
+#wmoazwlmnn .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -390,46 +379,46 @@ The variables are as follows:</p>
   border-right-color: #D3D3D3;
 }
 
-#hquyyyprmx .gt_sourcenote {
+#wmoazwlmnn .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#hquyyyprmx .gt_left {
+#wmoazwlmnn .gt_left {
   text-align: left;
 }
 
-#hquyyyprmx .gt_center {
+#wmoazwlmnn .gt_center {
   text-align: center;
 }
 
-#hquyyyprmx .gt_right {
+#wmoazwlmnn .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#hquyyyprmx .gt_font_normal {
+#wmoazwlmnn .gt_font_normal {
   font-weight: normal;
 }
 
-#hquyyyprmx .gt_font_bold {
+#wmoazwlmnn .gt_font_bold {
   font-weight: bold;
 }
 
-#hquyyyprmx .gt_font_italic {
+#wmoazwlmnn .gt_font_italic {
   font-style: italic;
 }
 
-#hquyyyprmx .gt_super {
+#wmoazwlmnn .gt_super {
   font-size: 65%;
 }
 
-#hquyyyprmx .gt_footnote_marks {
+#wmoazwlmnn .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="hquyyyprmx" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="wmoazwlmnn" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -742,7 +731,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#uwqcdnsdgw .gt_table {
+#trlibdluvh .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -759,7 +748,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-color: #A8A8A8;
 }
 
-#uwqcdnsdgw .gt_heading {
+#trlibdluvh .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -770,7 +759,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_title {
+#trlibdluvh .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -780,7 +769,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-width: 0;
 }
 
-#uwqcdnsdgw .gt_subtitle {
+#trlibdluvh .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -790,13 +779,13 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-width: 0;
 }
 
-#uwqcdnsdgw .gt_bottom_border {
+#trlibdluvh .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_col_headings {
+#trlibdluvh .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -811,7 +800,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_col_heading {
+#trlibdluvh .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -825,7 +814,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   overflow-x: hidden;
 }
 
-#uwqcdnsdgw .gt_column_spanner_outer {
+#trlibdluvh .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -837,15 +826,15 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 4px;
 }
 
-#uwqcdnsdgw .gt_column_spanner_outer:first-child {
+#trlibdluvh .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#uwqcdnsdgw .gt_column_spanner_outer:last-child {
+#trlibdluvh .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#uwqcdnsdgw .gt_column_spanner {
+#trlibdluvh .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -857,7 +846,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   width: 100%;
 }
 
-#uwqcdnsdgw .gt_group_heading {
+#trlibdluvh .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -879,7 +868,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   vertical-align: middle;
 }
 
-#uwqcdnsdgw .gt_empty_group_heading {
+#trlibdluvh .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -894,19 +883,19 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   vertical-align: middle;
 }
 
-#uwqcdnsdgw .gt_striped {
+#trlibdluvh .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#uwqcdnsdgw .gt_from_md > :first-child {
+#trlibdluvh .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#uwqcdnsdgw .gt_from_md > :last-child {
+#trlibdluvh .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#uwqcdnsdgw .gt_row {
+#trlibdluvh .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -925,7 +914,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   overflow-x: hidden;
 }
 
-#uwqcdnsdgw .gt_stub {
+#trlibdluvh .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -936,7 +925,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-left: 12px;
 }
 
-#uwqcdnsdgw .gt_summary_row {
+#trlibdluvh .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -946,7 +935,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 5px;
 }
 
-#uwqcdnsdgw .gt_first_summary_row {
+#trlibdluvh .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -956,7 +945,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_grand_summary_row {
+#trlibdluvh .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -966,7 +955,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   padding-right: 5px;
 }
 
-#uwqcdnsdgw .gt_first_grand_summary_row {
+#trlibdluvh .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -976,7 +965,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-top-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_table_body {
+#trlibdluvh .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -985,7 +974,7 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-bottom-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_footnotes {
+#trlibdluvh .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -999,13 +988,13 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_footnote {
+#trlibdluvh .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#uwqcdnsdgw .gt_sourcenotes {
+#trlibdluvh .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1019,46 +1008,46 @@ The primer says that larger values (like &gt; <code>1e4</code>) might indicate t
   border-right-color: #D3D3D3;
 }
 
-#uwqcdnsdgw .gt_sourcenote {
+#trlibdluvh .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#uwqcdnsdgw .gt_left {
+#trlibdluvh .gt_left {
   text-align: left;
 }
 
-#uwqcdnsdgw .gt_center {
+#trlibdluvh .gt_center {
   text-align: center;
 }
 
-#uwqcdnsdgw .gt_right {
+#trlibdluvh .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#uwqcdnsdgw .gt_font_normal {
+#trlibdluvh .gt_font_normal {
   font-weight: normal;
 }
 
-#uwqcdnsdgw .gt_font_bold {
+#trlibdluvh .gt_font_bold {
   font-weight: bold;
 }
 
-#uwqcdnsdgw .gt_font_italic {
+#trlibdluvh .gt_font_italic {
   font-style: italic;
 }
 
-#uwqcdnsdgw .gt_super {
+#trlibdluvh .gt_super {
   font-size: 65%;
 }
 
-#uwqcdnsdgw .gt_footnote_marks {
+#trlibdluvh .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="uwqcdnsdgw" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="trlibdluvh" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -1204,7 +1193,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#yhmlubemyv .gt_table {
+#oilmsuhewk .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -1221,7 +1210,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-color: #A8A8A8;
 }
 
-#yhmlubemyv .gt_heading {
+#oilmsuhewk .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -1232,7 +1221,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_title {
+#oilmsuhewk .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -1242,7 +1231,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-width: 0;
 }
 
-#yhmlubemyv .gt_subtitle {
+#oilmsuhewk .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -1252,13 +1241,13 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-width: 0;
 }
 
-#yhmlubemyv .gt_bottom_border {
+#oilmsuhewk .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_col_headings {
+#oilmsuhewk .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1273,7 +1262,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_col_heading {
+#oilmsuhewk .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1287,7 +1276,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   overflow-x: hidden;
 }
 
-#yhmlubemyv .gt_column_spanner_outer {
+#oilmsuhewk .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1299,15 +1288,15 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 4px;
 }
 
-#yhmlubemyv .gt_column_spanner_outer:first-child {
+#oilmsuhewk .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#yhmlubemyv .gt_column_spanner_outer:last-child {
+#oilmsuhewk .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#yhmlubemyv .gt_column_spanner {
+#oilmsuhewk .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -1319,7 +1308,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   width: 100%;
 }
 
-#yhmlubemyv .gt_group_heading {
+#oilmsuhewk .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1341,7 +1330,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   vertical-align: middle;
 }
 
-#yhmlubemyv .gt_empty_group_heading {
+#oilmsuhewk .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1356,19 +1345,19 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   vertical-align: middle;
 }
 
-#yhmlubemyv .gt_striped {
+#oilmsuhewk .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#yhmlubemyv .gt_from_md > :first-child {
+#oilmsuhewk .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#yhmlubemyv .gt_from_md > :last-child {
+#oilmsuhewk .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#yhmlubemyv .gt_row {
+#oilmsuhewk .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1387,7 +1376,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   overflow-x: hidden;
 }
 
-#yhmlubemyv .gt_stub {
+#oilmsuhewk .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -1398,7 +1387,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-left: 12px;
 }
 
-#yhmlubemyv .gt_summary_row {
+#oilmsuhewk .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1408,7 +1397,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 5px;
 }
 
-#yhmlubemyv .gt_first_summary_row {
+#oilmsuhewk .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1418,7 +1407,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_grand_summary_row {
+#oilmsuhewk .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1428,7 +1417,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   padding-right: 5px;
 }
 
-#yhmlubemyv .gt_first_grand_summary_row {
+#oilmsuhewk .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1438,7 +1427,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-top-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_table_body {
+#oilmsuhewk .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1447,7 +1436,7 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-bottom-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_footnotes {
+#oilmsuhewk .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1461,13 +1450,13 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_footnote {
+#oilmsuhewk .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#yhmlubemyv .gt_sourcenotes {
+#oilmsuhewk .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1481,46 +1470,46 @@ Compute those odds ratios, and their corresponding Wald 95% CIs:</p>
   border-right-color: #D3D3D3;
 }
 
-#yhmlubemyv .gt_sourcenote {
+#oilmsuhewk .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#yhmlubemyv .gt_left {
+#oilmsuhewk .gt_left {
   text-align: left;
 }
 
-#yhmlubemyv .gt_center {
+#oilmsuhewk .gt_center {
   text-align: center;
 }
 
-#yhmlubemyv .gt_right {
+#oilmsuhewk .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#yhmlubemyv .gt_font_normal {
+#oilmsuhewk .gt_font_normal {
   font-weight: normal;
 }
 
-#yhmlubemyv .gt_font_bold {
+#oilmsuhewk .gt_font_bold {
   font-weight: bold;
 }
 
-#yhmlubemyv .gt_font_italic {
+#oilmsuhewk .gt_font_italic {
   font-style: italic;
 }
 
-#yhmlubemyv .gt_super {
+#oilmsuhewk .gt_super {
   font-size: 65%;
 }
 
-#yhmlubemyv .gt_footnote_marks {
+#oilmsuhewk .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="yhmlubemyv" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="oilmsuhewk" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -1627,7 +1616,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#mebmevxcbu .gt_table {
+#yjilimfoqj .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -1644,7 +1633,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-color: #A8A8A8;
 }
 
-#mebmevxcbu .gt_heading {
+#yjilimfoqj .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -1655,7 +1644,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_title {
+#yjilimfoqj .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -1665,7 +1654,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-width: 0;
 }
 
-#mebmevxcbu .gt_subtitle {
+#yjilimfoqj .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -1675,13 +1664,13 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-width: 0;
 }
 
-#mebmevxcbu .gt_bottom_border {
+#yjilimfoqj .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_col_headings {
+#yjilimfoqj .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1696,7 +1685,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_col_heading {
+#yjilimfoqj .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1710,7 +1699,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   overflow-x: hidden;
 }
 
-#mebmevxcbu .gt_column_spanner_outer {
+#yjilimfoqj .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1722,15 +1711,15 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 4px;
 }
 
-#mebmevxcbu .gt_column_spanner_outer:first-child {
+#yjilimfoqj .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#mebmevxcbu .gt_column_spanner_outer:last-child {
+#yjilimfoqj .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#mebmevxcbu .gt_column_spanner {
+#yjilimfoqj .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -1742,7 +1731,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   width: 100%;
 }
 
-#mebmevxcbu .gt_group_heading {
+#yjilimfoqj .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1764,7 +1753,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   vertical-align: middle;
 }
 
-#mebmevxcbu .gt_empty_group_heading {
+#yjilimfoqj .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1779,19 +1768,19 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   vertical-align: middle;
 }
 
-#mebmevxcbu .gt_striped {
+#yjilimfoqj .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#mebmevxcbu .gt_from_md > :first-child {
+#yjilimfoqj .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#mebmevxcbu .gt_from_md > :last-child {
+#yjilimfoqj .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#mebmevxcbu .gt_row {
+#yjilimfoqj .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1810,7 +1799,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   overflow-x: hidden;
 }
 
-#mebmevxcbu .gt_stub {
+#yjilimfoqj .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -1821,7 +1810,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-left: 12px;
 }
 
-#mebmevxcbu .gt_summary_row {
+#yjilimfoqj .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1831,7 +1820,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 5px;
 }
 
-#mebmevxcbu .gt_first_summary_row {
+#yjilimfoqj .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1841,7 +1830,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_grand_summary_row {
+#yjilimfoqj .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1851,7 +1840,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   padding-right: 5px;
 }
 
-#mebmevxcbu .gt_first_grand_summary_row {
+#yjilimfoqj .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1861,7 +1850,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-top-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_table_body {
+#yjilimfoqj .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1870,7 +1859,7 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-bottom-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_footnotes {
+#yjilimfoqj .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1884,13 +1873,13 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_footnote {
+#yjilimfoqj .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#mebmevxcbu .gt_sourcenotes {
+#yjilimfoqj .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1904,46 +1893,46 @@ tidy(clm_rating_contact_temp_probit) %&gt;%
   border-right-color: #D3D3D3;
 }
 
-#mebmevxcbu .gt_sourcenote {
+#yjilimfoqj .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#mebmevxcbu .gt_left {
+#yjilimfoqj .gt_left {
   text-align: left;
 }
 
-#mebmevxcbu .gt_center {
+#yjilimfoqj .gt_center {
   text-align: center;
 }
 
-#mebmevxcbu .gt_right {
+#yjilimfoqj .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#mebmevxcbu .gt_font_normal {
+#yjilimfoqj .gt_font_normal {
   font-weight: normal;
 }
 
-#mebmevxcbu .gt_font_bold {
+#yjilimfoqj .gt_font_bold {
   font-weight: bold;
 }
 
-#mebmevxcbu .gt_font_italic {
+#yjilimfoqj .gt_font_italic {
   font-style: italic;
 }
 
-#mebmevxcbu .gt_super {
+#yjilimfoqj .gt_super {
   font-size: 65%;
 }
 
-#mebmevxcbu .gt_footnote_marks {
+#yjilimfoqj .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="mebmevxcbu" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="yjilimfoqj" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -2026,7 +2015,7 @@ See if we can spot the <code>judge</code> variance in a plot of <code>rating</co
 <p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-18-1.png" width="672" /></p>
 <p>There is definitely some judge-specific variability in the perception of bitterness of wine.
 <code>judge</code> 5, for instance, doesn’t stray far from <code>rating</code> = 3, while <code>judge</code> 7 didn’t consider any of the wines particularly bitter.</p>
-<p>Fit the model with <code>ordinal::clmm</code> and logit link:</p>
+<p>Fit the full model with <code>ordinal::clmm</code> and logit link:</p>
 <pre class="r"><code>clmm_rating_contact_temp &lt;-
   clmm(
     rating ~ temp + contact + (1|judge),
@@ -2082,7 +2071,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#pzjnwfrsqc .gt_table {
+#splqkyojjv .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -2099,7 +2088,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-color: #A8A8A8;
 }
 
-#pzjnwfrsqc .gt_heading {
+#splqkyojjv .gt_heading {
   background-color: #FFFFFF;
   border-bottom-color: #FFFFFF;
   border-left-style: hidden;
@@ -2110,7 +2099,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_title {
+#splqkyojjv .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -2120,7 +2109,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-width: 0;
 }
 
-#pzjnwfrsqc .gt_subtitle {
+#splqkyojjv .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -2130,13 +2119,13 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-width: 0;
 }
 
-#pzjnwfrsqc .gt_bottom_border {
+#splqkyojjv .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_col_headings {
+#splqkyojjv .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -2151,7 +2140,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_col_heading {
+#splqkyojjv .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -2165,7 +2154,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   overflow-x: hidden;
 }
 
-#pzjnwfrsqc .gt_column_spanner_outer {
+#splqkyojjv .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -2177,15 +2166,15 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 4px;
 }
 
-#pzjnwfrsqc .gt_column_spanner_outer:first-child {
+#splqkyojjv .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#pzjnwfrsqc .gt_column_spanner_outer:last-child {
+#splqkyojjv .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#pzjnwfrsqc .gt_column_spanner {
+#splqkyojjv .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -2197,7 +2186,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   width: 100%;
 }
 
-#pzjnwfrsqc .gt_group_heading {
+#splqkyojjv .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -2219,7 +2208,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   vertical-align: middle;
 }
 
-#pzjnwfrsqc .gt_empty_group_heading {
+#splqkyojjv .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -2234,19 +2223,19 @@ summary(clmm_rating_contact_temp)</code></pre>
   vertical-align: middle;
 }
 
-#pzjnwfrsqc .gt_striped {
+#splqkyojjv .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#pzjnwfrsqc .gt_from_md > :first-child {
+#splqkyojjv .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#pzjnwfrsqc .gt_from_md > :last-child {
+#splqkyojjv .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#pzjnwfrsqc .gt_row {
+#splqkyojjv .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2265,7 +2254,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   overflow-x: hidden;
 }
 
-#pzjnwfrsqc .gt_stub {
+#splqkyojjv .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-weight: initial;
@@ -2276,7 +2265,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-left: 12px;
 }
 
-#pzjnwfrsqc .gt_summary_row {
+#splqkyojjv .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -2286,7 +2275,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 5px;
 }
 
-#pzjnwfrsqc .gt_first_summary_row {
+#splqkyojjv .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2296,7 +2285,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_grand_summary_row {
+#splqkyojjv .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -2306,7 +2295,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   padding-right: 5px;
 }
 
-#pzjnwfrsqc .gt_first_grand_summary_row {
+#splqkyojjv .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -2316,7 +2305,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_table_body {
+#splqkyojjv .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -2325,7 +2314,7 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_footnotes {
+#splqkyojjv .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -2339,13 +2328,13 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_footnote {
+#splqkyojjv .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#pzjnwfrsqc .gt_sourcenotes {
+#splqkyojjv .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -2359,46 +2348,46 @@ summary(clmm_rating_contact_temp)</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#pzjnwfrsqc .gt_sourcenote {
+#splqkyojjv .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#pzjnwfrsqc .gt_left {
+#splqkyojjv .gt_left {
   text-align: left;
 }
 
-#pzjnwfrsqc .gt_center {
+#splqkyojjv .gt_center {
   text-align: center;
 }
 
-#pzjnwfrsqc .gt_right {
+#splqkyojjv .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#pzjnwfrsqc .gt_font_normal {
+#splqkyojjv .gt_font_normal {
   font-weight: normal;
 }
 
-#pzjnwfrsqc .gt_font_bold {
+#splqkyojjv .gt_font_bold {
   font-weight: bold;
 }
 
-#pzjnwfrsqc .gt_font_italic {
+#splqkyojjv .gt_font_italic {
   font-style: italic;
 }
 
-#pzjnwfrsqc .gt_super {
+#splqkyojjv .gt_super {
   font-size: 65%;
 }
 
-#pzjnwfrsqc .gt_footnote_marks {
+#splqkyojjv .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="pzjnwfrsqc" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="splqkyojjv" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -2609,6 +2598,99 @@ For example, <span class="math inline">\(j\)</span> = 3:</p>
 ##  0.4960357</code></pre>
 <p>which matches the value calculated previously using <code>predict</code>.</p>
 </div>
+<div id="estimated-marginal-means" class="section level4">
+<h4>Estimated marginal means</h4>
+<p>The <code>emmeans</code> package provides functionality for estimating marginal mean effects of ordinal models.
+The package documentation also provides an example using <code>ordinal</code> and <code>wine</code> data <a href="https://cran.r-project.org/web/packages/emmeans/vignettes/sophisticated.html#ordinal">here</a>.</p>
+<pre class="r"><code>library(emmeans)</code></pre>
+<p>In the “Models supported by <code>emmeans</code>” document, we see the following:</p>
+<table>
+<colgroup>
+<col width="10%" />
+<col width="6%" />
+<col width="5%" />
+<col width="74%" />
+<col width="2%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Object.class</th>
+<th>Package</th>
+<th>Group</th>
+<th>Arguments/notes</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>clm</td>
+<td>ordinal</td>
+<td>O</td>
+<td><code>mode = c("latent", "linear.predictor", "cum.prob", "exc.prob", "prob", "mean.class", "scale")</code></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>clmm</td>
+<td>ordinal</td>
+<td>O</td>
+<td>Like <code>clm</code> but no <code>"scale"</code> mode</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>emmeans(clmm_rating_contact_temp,
+        specs = list(pairwise ~ temp, pairwise ~ contact),
+        mode = &quot;latent&quot;)</code></pre>
+<pre><code>## $`emmeans of temp`
+##  temp emmean    SE  df asymp.LCL asymp.UCL
+##  cold  -1.63 0.547 Inf    -2.707    -0.562
+##  warm   1.43 0.532 Inf     0.387     2.470
+## 
+## Results are averaged over the levels of: contact 
+## Confidence level used: 0.95 
+## 
+## $`pairwise differences of temp`
+##  contrast    estimate    SE  df z.ratio p.value
+##  cold - warm    -3.06 0.595 Inf -5.145  &lt;.0001 
+## 
+## Results are averaged over the levels of: contact 
+## 
+## $`emmeans of contact`
+##  contact emmean    SE  df asymp.LCL asymp.UCL
+##  no      -1.020 0.522 Inf    -2.043   0.00274
+##  yes      0.815 0.513 Inf    -0.191   1.82072
+## 
+## Results are averaged over the levels of: temp 
+## Confidence level used: 0.95 
+## 
+## $`pairwise differences of contact`
+##  contrast estimate    SE  df z.ratio p.value
+##  no - yes    -1.83 0.513 Inf -3.580  0.0003 
+## 
+## Results are averaged over the levels of: temp</code></pre>
+<p>The contrast estimates are in terms of the latent (underlying unobserved) bitterness <code>rating</code>.</p>
+<p>Using <code>mode = "cum.prob"</code> and <code>mode = "exc.prob</code>", we can get cumulative probabilites and exceedance (<code>- cumulative) probabilities. For example, the probability of a</code>rating<code>of at least 4 for different</code>temp`:</p>
+<pre class="r"><code>emmeans(clmm_rating_contact_temp, ~ temp,
+        mode = &quot;exc.prob&quot;, at = list(cut = &quot;3|4&quot;))</code></pre>
+<pre><code>##  temp exc.prob     SE  df asymp.LCL asymp.UCL
+##  cold    0.049 0.0304 Inf   -0.0107     0.109
+##  warm    0.450 0.1084 Inf    0.2371     0.662
+## 
+## Results are averaged over the levels of: contact 
+## Confidence level used: 0.95</code></pre>
+<p><code>mode = "prob"</code> gives us probability distributions of each <code>rating</code>:</p>
+<pre class="r"><code>emmeans(clmm_rating_contact_temp,
+        ~ rating | temp, mode = &quot;prob&quot;) %&gt;%
+  plot()</code></pre>
+<p><img src="/post/2020-03-15-ordinal-regression-in-r-part-1/index_files/figure-html/unnamed-chunk-31-1.png" width="672" /></p>
+</div>
 <div id="choice-of-link-function" class="section level4">
 <h4>Choice of link function</h4>
 <p>So far, we have used the logit link (and briefly the probit link to compare estimates with linear regression).
@@ -2705,7 +2787,7 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  collate  English_Canada.1252         
 ##  ctype    English_Canada.1252         
 ##  tz       America/Curacao             
-##  date     2020-03-15                  
+##  date     2020-03-16                  
 ## 
 ## - Packages -------------------------------------------------------------------
 ##  package      * version     date       lib source                          
@@ -2718,6 +2800,8 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  cellranger     1.1.0       2016-07-27 [1] CRAN (R 3.6.0)                  
 ##  checkmate      1.9.3       2019-05-03 [1] CRAN (R 3.6.0)                  
 ##  cli            2.0.2       2020-02-28 [1] CRAN (R 3.6.3)                  
+##  coda           0.19-3      2019-07-05 [1] CRAN (R 3.6.1)                  
+##  codetools      0.2-16      2018-12-24 [2] CRAN (R 3.6.2)                  
 ##  colorspace     1.4-1       2019-03-18 [1] CRAN (R 3.6.0)                  
 ##  cowplot        1.0.0       2019-07-11 [1] CRAN (R 3.6.1)                  
 ##  crayon         1.3.4       2017-09-16 [1] CRAN (R 3.6.0)                  
@@ -2728,6 +2812,8 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  digest         0.6.25      2020-02-23 [1] CRAN (R 3.6.2)                  
 ##  dplyr        * 0.8.99.9000 2020-03-11 [1] Github (tidyverse/dplyr@e1f32c8)
 ##  ellipsis       0.3.0       2019-09-20 [1] CRAN (R 3.6.1)                  
+##  emmeans      * 1.4.4       2020-01-28 [1] CRAN (R 3.6.2)                  
+##  estimability   1.3         2018-02-11 [1] CRAN (R 3.6.0)                  
 ##  evaluate       0.13        2019-02-12 [1] CRAN (R 3.6.0)                  
 ##  fansi          0.4.1       2020-01-08 [1] CRAN (R 3.6.2)                  
 ##  farver         2.0.3       2020-01-16 [1] CRAN (R 3.6.2)                  
@@ -2754,7 +2840,9 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  Matrix         1.2-18      2019-11-27 [2] CRAN (R 3.6.2)                  
 ##  memoise        1.1.0       2017-04-21 [1] CRAN (R 3.6.0)                  
 ##  modelr         0.1.5       2019-08-08 [1] CRAN (R 3.6.2)                  
+##  multcomp       1.4-12      2020-01-10 [1] CRAN (R 3.6.2)                  
 ##  munsell        0.5.0       2018-06-12 [1] CRAN (R 3.6.0)                  
+##  mvtnorm        1.0-11      2019-06-19 [1] CRAN (R 3.6.0)                  
 ##  nlme           3.1-140     2019-05-12 [1] CRAN (R 3.6.0)                  
 ##  numDeriv       2016.8-1.1  2019-06-06 [1] CRAN (R 3.6.0)                  
 ##  ordinal      * 2019.12-10  2019-12-15 [1] CRAN (R 3.6.3)                  
@@ -2763,6 +2851,7 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  pkgbuild       1.0.3       2019-03-20 [1] CRAN (R 3.6.0)                  
 ##  pkgconfig      2.0.3       2019-09-22 [1] CRAN (R 3.6.1)                  
 ##  pkgload        1.0.2       2018-10-29 [1] CRAN (R 3.6.0)                  
+##  plyr           1.8.5       2019-12-10 [1] CRAN (R 3.6.2)                  
 ##  prettyunits    1.0.2       2015-07-13 [1] CRAN (R 3.6.0)                  
 ##  processx       3.3.0       2019-03-10 [1] CRAN (R 3.6.0)                  
 ##  ps             1.3.0       2018-12-21 [1] CRAN (R 3.6.0)                  
@@ -2779,12 +2868,15 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  rprojroot      1.3-2       2018-01-03 [1] CRAN (R 3.6.0)                  
 ##  rstudioapi     0.11        2020-02-07 [1] CRAN (R 3.6.2)                  
 ##  rvest          0.3.5       2019-11-08 [1] CRAN (R 3.6.2)                  
+##  sandwich       2.5-1       2019-04-06 [1] CRAN (R 3.6.0)                  
 ##  sass           0.1.0.9000  2019-05-07 [1] Github (rstudio/sass@c3ba17c)   
 ##  scales         1.1.0       2019-11-18 [1] CRAN (R 3.6.1)                  
 ##  sessioninfo    1.1.1       2018-11-05 [1] CRAN (R 3.6.0)                  
 ##  stringi        1.4.6       2020-02-17 [1] CRAN (R 3.6.2)                  
 ##  stringr      * 1.4.0       2019-02-10 [1] CRAN (R 3.6.0)                  
+##  survival       3.1-8       2019-12-03 [2] CRAN (R 3.6.2)                  
 ##  testthat       2.3.0       2019-11-05 [1] CRAN (R 3.6.1)                  
+##  TH.data        1.0-10      2019-01-21 [1] CRAN (R 3.6.0)                  
 ##  tibble       * 2.1.3       2019-06-06 [1] CRAN (R 3.6.1)                  
 ##  tidyr        * 1.0.2       2020-01-24 [1] CRAN (R 3.6.2)                  
 ##  tidyselect     1.0.0       2020-01-27 [1] CRAN (R 3.6.2)                  
@@ -2797,11 +2889,18 @@ In this post, we first learned the theoretical basis for these models, then work
 ##  withr          2.1.2       2018-03-15 [1] CRAN (R 3.6.0)                  
 ##  xfun           0.12        2020-01-13 [1] CRAN (R 3.6.3)                  
 ##  xml2           1.2.2       2019-08-09 [1] CRAN (R 3.6.2)                  
+##  xtable         1.8-4       2019-04-21 [1] CRAN (R 3.6.0)                  
 ##  yaml           2.2.0       2018-07-25 [1] CRAN (R 3.6.0)                  
+##  zoo            1.8-5       2019-03-21 [1] CRAN (R 3.6.0)                  
 ## 
 ## [1] D:/Taylor/Documents/R/win-library/3.6
 ## [2] C:/Program Files/R/R-3.6.2/library</code></pre>
 </div>
-<div id="references" class="section level1">
+<div id="references" class="section level1 unnumbered">
 <h1>References</h1>
+<div id="refs" class="references hanging-indent">
+<div id="ref-Randall1989">
+<p>Randall, J. H. 1989. “The Analysis of Sensory Data by Generalized Linear Model.” <em>Biometrical Journal</em> 31 (7): 781–93. <a href="https://doi.org/10.1002/bimj.4710310703">https://doi.org/10.1002/bimj.4710310703</a>.</p>
+</div>
+</div>
 </div>
