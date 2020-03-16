@@ -431,6 +431,66 @@ plot(brm_rating_contact_temp)
 plot(brm_rating_contact_temp_weak_prior)
 ```
 
+
+# Aside: adjacent-category models
+
+Here are what @Burkner2019 had to say about the adjacent-category class of ordinal models.
+
+* It is difficult to think of a natural process leading to them
+* Chosen for its mathematical convenience rather than quality of interpretation
+* Predict the decision between two adjacenet categories $k$ and $k+1$
+* Latent variables $\tilde{Y}_k$ with thresholds $\tau_k$ and cumulative distribution function $F$
+* If $\tilde{Y}_k < \tau_k$, we choose category $k$; $k+1$ otherwise:
+
+$$
+\text{Pr}(Y = k | Y \in \{k, k+1\}) = F(\tau_k)
+$$
+
+Suppose the latent variable $\tilde{Y}_2$ is standard normally distributed with distribution function $\Phi$, and $\tau_2$ = 1.
+Then the probability of choosing $Y$ = 2 over $Y$ = 3 would be written as:
+
+$$
+\text{Pr}(Y = 2 | Y \in \{2, 3\}) = \Phi(\tau_2) = \Phi(1) = 0.84
+$$
+Try fitting the null wine rating model with the `acat` family in `brms`:
+
+```{r}
+brm_rating_contact_temp_default_prior_acat <-
+  brm(
+    f_rating_contact_temp,
+    family = acat(link = "logit"),
+    data = wine,
+    file = "brm_rating_contact_temp_default_prior_acat"
+  )
+```
+How do these estimates compare to the cumulative model?
+
+```{r}
+tidy(brm_rating_contact_temp_default_prior) %>%
+  mutate(model = "cumulative") %>%
+  bind_rows(
+    tidy(brm_rating_contact_temp_default_prior_acat) %>%
+      mutate(model = "adjacent-category")
+  ) %>%
+  filter(!str_detect(term, "r_judge|lp__|prior")) %>%
+  transmute(
+    term, model,
+    estimate_se = str_c(round(estimate, 2), " (", round(std.error, 2), ")")
+  ) %>%
+  spread(model, estimate_se) %>%
+  gt()
+
+```
+
+`brms` has a convenience function `marginal_effects` for quickly plotting estimates:
+
+```{r}
+marginal_effects(brm_rating_contact_temp_default_prior_acat, categorical = T,
+                 re_formula = NA, ask = F)
+```
+
+
+
 # References
 
 
