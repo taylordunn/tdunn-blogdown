@@ -436,11 +436,12 @@ plot(brm_rating_contact_temp_weak_prior)
 
 Here are what @Burkner2019 had to say about the adjacent-category class of ordinal models.
 
-* It is difficult to think of a natural process leading to them
-* Chosen for its mathematical convenience rather than quality of interpretation
-* Predict the decision between two adjacenet categories $k$ and $k+1$
+* Predict the decision between two adjacent categories $k$ and $k+1$
 * Latent variables $\tilde{Y}_k$ with thresholds $\tau_k$ and cumulative distribution function $F$
-* If $\tilde{Y}_k < \tau_k$, we choose category $k$; $k+1$ otherwise:
+* If $\tilde{Y}_k < \tau_k$, we choose category $k$; $k+1$ otherwise
+* It is difficult to think of a natural process leading to them; chosen for its mathematical convenience rather than quality of interpretation
+
+Mathematically:
 
 $$
 \text{Pr}(Y = k | Y \in \{k, k+1\}) = F(\tau_k)
@@ -482,13 +483,167 @@ tidy(brm_rating_contact_temp_default_prior) %>%
 
 ```
 
-`brms` has a convenience function `marginal_effects` for quickly plotting estimates:
+`brms` has a convenience function `marginal_effects` for quickly plotting estimates.
+For example, the effect of `category`:
 
 ```{r}
-marginal_effects(brm_rating_contact_temp_default_prior_acat, categorical = T,
-                 re_formula = NA, ask = F)
+me_rating_contact_temp_default_prior_acat <-
+  marginal_effects(brm_rating_contact_temp_default_prior_acat, categorical = T,
+                   re_formula = NA, ask = F)
+
+me_rating_contact_temp_default_prior <-
+  marginal_effects(brm_rating_contact_temp_default_prior, categorical = T,
+                   re_formula = NA, ask = F)
+
+me_rating_contact_temp_default_prior_acat$`contact:cats__` %>%
+  mutate(model = "adjacent-category") %>%
+  bind_rows(
+    me_rating_contact_temp_default_prior$`contact:cats__` %>%
+      mutate(model = "cumulative")
+  ) %>%
+  ggplot(aes(x = contact, y = estimate__, color = effect2__)) +
+  geom_point(position = position_dodge(1), size = 3) +
+  geom_linerange(aes(ymin = lower__, ymax = upper__),
+                 position = position_dodge(1), size = 1) +
+  facet_wrap(~model) +
+  scale_color_viridis_d() +
+  labs(y = "Estimated probabilities", color = "rating")
 ```
 
+The model classes are essentially the same.
+
+# Category-specific effects
+
+In all of the models specified so far, all fixed effects were presumed to affect all response categories equally.
+For example, the effect of `temp` = warm had a mean effect of $\beta_1$ =
+`r tidy(brm_rating_contact_temp) %>% filter(term == "b_tempwarm") %>% pull(estimate) %>% round(2)` on the thresholds $\theta_j$, for all $j = 1, 2, 3, 4$.
+
+This may not be an appropriate assumption.
+For example, `temp` warm might have little relation to the highest `rating`, but it may strongly predict `rating`s of 3 relative to 1 or 2.
+
+If this is a possibility, then we can model the predictor as having a *category-sepcific* effect by estimating $K-1$ coefficients for it.
+The reason we've introduced the adjacent-category model is that it is unproblematic to incorporate these effects (sequential models work as well).
+Cumulative models, however, can lead to negative probabilities, and so should be avoided when using category-specific effects.
+
+Fit the adjacent-category model with category-specific effects on `temp`:
+
+$$
+\begin{align}
+\text{logit}(p(y_i \leq j)) &= \theta_j - \beta_{1j} \text{temp}_i - \beta_2 \text{contact}_i - u( \text{judge}_i) \\
+\text{logit}(p(y_i \leq j)) &= \theta_j - \beta_{1j} \text{temp}_i - u( \text{judge}_i) \\
+\end{align}
+$$
+
+```{r}
+f_rating_cs_temp <- rating ~ 1 + cs(temp) + (1|judge)
+# Note that category-specific priors aren't available
+#get_prior(f_rating_cs_temp, data = wine, family = acat(link = "logit"))
+
+brm_rating_cs_temp_default_prior_acat <-
+  brm(
+    f_rating_cs_temp,
+    family = acat(link = "logit"),
+    data = wine,
+    file = "brm_rating_cs_temp_default_prior_acat"
+  )
+```
+
+There were many divergent transitions.
+Investigate the trace plots:
+
+```{r}
+plot(brm_rating_cs_temp_default_prior_acat)
+```
+
+Most of the divergence is coming from estimating the lowest and highest coefficients $\beta_{11}$ and $\beta_{14}$.
+We will try some regularizing priors and increasing the `adapt_delta` argument:
+
+```{r}
+brm_rating_cs_temp_weak_prior_acat <-
+  brm(
+    f_rating_cs_temp,
+    prior = prior_rating_contact_temp,
+    family = acat(link = "logit"),
+    data = wine,
+    file = "brm_rating_cs_temp_weak_prior_acat",
+    control = list(adapt_delta = 0.9)
+  )
+plot(brm_rating_cs_temp_weak_prior_acat)
+```
+
+This makes a huge difference.
+Compare to a model without category-specific effects:
+
+```{r}
+me_rating_cs_temp_weak_prior_acat <-
+  marginal_effects(brm_rating_cs_temp_weak_prior_acat, categorical = T,
+                   re_formula = NA, ask = F)
+brm_rating_temp_weak_prior_acat <-
+  brm(
+    rating ~ 1 + temp + (1|judge),
+    prior = prior_rating_contact_temp,
+    family = acat(link = "logit"),
+    data = wine,
+    file = "brm_rating_temp_weak_prior_acat"
+  )
+me_rating_temp_weak_prior_acat <-
+  marginal_effects(brm_rating_temp_weak_prior_acat, categorical = T,
+                   re_formula = NA, ask = F)
+
+me_rating_temp_weak_prior_acat$`temp:cats__` %>%
+  mutate(model = "constant effects") %>%
+  bind_rows(
+    me_rating_cs_temp_weak_prior_acat$`temp:cats__` %>%
+      mutate(model = "category-specific effects")
+  ) %>%
+  ggplot(aes(x = temp, y = estimate__, color = effect2__)) +
+  geom_point(position = position_dodge(1), size = 3) +
+  geom_linerange(aes(ymin = lower__, ymax = upper__),
+                 position = position_dodge(1), size = 1) +
+  facet_wrap(~model) +
+  scale_color_viridis_d() +
+  labs(y = "Estimated probabilities", color = "rating")
+```
+
+Or, put the probabilities for each model side-by-side, along with the empirical probabilities:
+
+```{r}
+me_rating_temp_weak_prior_acat$`temp:cats__` %>%
+  mutate(model = "constant effects") %>%
+  bind_rows(
+    me_rating_cs_temp_weak_prior_acat$`temp:cats__` %>%
+      mutate(model = "category-specific effects")
+  ) %>%
+  ggp(aes(x = effect2__, y = estimate__, color = model)) +
+  geom_point(position = position_dodge(0.5), size = 3) +
+  geom_linerange(aes(ymin = lower__, ymax = upper__),
+                 position = position_dodge(0.5), size = 1) +
+  geom_point(
+    data = wine %>%
+      group_by(temp, rating) %>%
+      tally() %>%
+      group_by(temp) %>%
+      mutate(p = n / sum(n), model = "empirical"),
+    aes(x = rating, y = p, color = model), size = 3
+  ) +
+  facet_wrap(~temp, ncol = 1) +
+  labs(y = "Estimated probabilities", color = "model")
+
+```
+
+We shouldn't be surprised the the category-specific model is better -- it has 4 more parameters to work with -- but we can compare them using leave-one-out cross-validation to determine how much better:
+
+```{r}
+brm_rating_temp_weak_prior_acat <-
+  add_criterion(brm_rating_temp_weak_prior_acat, "waic")
+brm_rating_cs_temp_weak_prior_acat <-
+  add_criterion(brm_rating_cs_temp_weak_prior_acat, "waic")
+loo_compare(
+  brm_rating_temp_weak_prior_acat,
+  brm_rating_cs_temp_weak_prior_acat,
+  criterion = "waic"
+)
+```
 
 
 # References

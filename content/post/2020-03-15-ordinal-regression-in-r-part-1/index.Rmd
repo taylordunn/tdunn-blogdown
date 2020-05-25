@@ -605,7 +605,7 @@ emmeans(clmm_rating_contact_temp,
 
 The contrast estimates are in terms of the latent (underlying unobserved) bitterness `rating`.
 
-Using `mode = "cum.prob"` and `mode = "exc.prob`", we can get cumulative probabilites and exceedance (` - cumulative) probabilities.
+Using `mode = "cum.prob"` and `mode = "exc.prob`", we can get cumulative probabilities and exceedance (1 - cumulative) probabilities.
 For example, the probability of a `rating` of at least 4 for different `temp`:
 
 ```{r}
