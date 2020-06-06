@@ -253,7 +253,7 @@ tibble(
   scale_y_continuous(expand = c(0, 0))
 ```
 
-To my eye, the $\text{Normal}(0, 10)/\text{Student-}t(3, 0, 10)$ and $\text{Normal}(0, 5)/\text{Student-}t(3, 0, 5)$ are not ideal because they place most of the samples are at the extremes (cumulative probabilities of 0 and 100%).
+To my eye, the $\text{Normal}(0, 10)/\text{Student-}t(3, 0, 10)$ and $\text{Normal}(0, 5)/\text{Student-}t(3, 0, 5)$ are not ideal because they place most of the samples at the extremes (cumulative probabilities of 0 and 100%).
 $\text{Normal}(0, 2)$ and $\text{Student-}t(3, 0, 2)$ are much more equal in terms of sampling the "probability" space.
 
 As for the scale parameter describing the variance in judge-specific random effects, I've seen the [half-Cauchy distribution recommended](https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations):
