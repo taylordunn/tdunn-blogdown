@@ -1,0 +1,1623 @@
+---
+title: Learning generalized estimating equations with R
+author: Taylor Dunn
+date: '2020-07-09'
+slug: learning-generalized-estimating-equations-with-r
+categories:
+  - R
+tags:
+  - rstats
+  - tidyverse
+bibliography: references.bib
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+
+
+<div id="background" class="section level1">
+<h1>Background</h1>
+<ul>
+<li><a href="https://en.wikipedia.org/wiki/Generalized_estimating_equation" class="uri">https://en.wikipedia.org/wiki/Generalized_estimating_equation</a></li>
+<li><a href="https://online.stat.psu.edu/stat504/node/180/" class="uri">https://online.stat.psu.edu/stat504/node/180/</a></li>
+<li><a href="https://wildlifesnpits.wordpress.com/2014/10/24/dealing-with-ugly-data-generalized-estimating-equations-gee/" class="uri">https://wildlifesnpits.wordpress.com/2014/10/24/dealing-with-ugly-data-generalized-estimating-equations-gee/</a></li>
+</ul>
+<p>Generalized estimating equations (GEE) are an extension of generalized linear models for the analysis of clustered (e.g. longitudinal) data.
+First introduced by <span class="citation">(Liang and Zeger 1986)</span>, the main use case is consistent estimation of parameters of a generalized linear model <em>even when the covariance structure is misspecified</em>.
+GEEs provide population level estimates – we can’t get subject-specific estimates.</p>
+<p>With a single observation of each subject, a generalized linear model can be applied to obtain parameter estimates for a variety of continuous or discrete outcome variables.
+With repeated observations, however, the correlation among values for a given subject must be taken into account.
+Put another way: GEE does not have distributional assumptions.</p>
+<p>So why use GEEs over the likelihood-based generalized linear mixed model?
+Supposedly because <span class="citation">(Fong, Rue, and Wakefield 2010)</span> the latter is highly sensitive to variance structure specification.</p>
+<ul>
+<li>Closely related to quasi-likelihood</li>
+</ul>
+</div>
+<div id="conditional-versus-marginal-models" class="section level1">
+<h1>Conditional versus marginal models</h1>
+<p>As per <span class="citation">(Lee and Nelder 2004)</span>:</p>
+<p>Consider a random-effect model</p>
+<p><span class="math display">\[
+y_{ij} = x_{ij} \beta + \nu_i + e_{ij}
+\]</span></p>
+<p>where <span class="math inline">\(\nu_{i} \sim N(0, \lambda)\)</span> is a random effect and <span class="math inline">\(e_{ij} \sim N(0, \phi)\)</span>.
+And a marginal model</p>
+<p><span class="math display">\[
+E(y_{ij}) = x_{ij} \beta
+\]</span></p>
+<p>where the parameters in <span class="math inline">\(\text{Var}(y) = \Sigma\)</span> are nuisance parameters that have an arbitrary chosen pattern.</p>
+<p>An obvious advantage of using a random-effect model is that they allow conditional inferences in addition to marginal inferences.
+For instance, we can obtain not only a conditional mean</p>
+<p><span class="math display">\[
+\mu_{ij}^c = E(y_{ij} | \nu_i) = x_{ij} \beta + \nu_i
+\]</span></p>
+<p>but also the marginal mean</p>
+<p><span class="math display">\[
+\mu_{ij} = E(\mu_{ij}^c) = E(y_{ij}) = x_{ij} \beta.
+\]</span></p>
+<p>With the marginal model, we can only obtain the marginal mean <span class="math inline">\(\mu_{ij}\)</span>.</p>
+</div>
+<div id="geepack" class="section level1">
+<h1><code>geepack</code></h1>
+<p><span class="citation">(Halekoh, Højsgaard, and Yan 2006)</span></p>
+<pre class="r"><code>library(tidyverse)</code></pre>
+<pre><code>## Warning: package &#39;tidyverse&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## Warning: package &#39;tibble&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## Warning: package &#39;purrr&#39; was built under R version 3.6.3</code></pre>
+<pre><code>## Warning: package &#39;forcats&#39; was built under R version 3.6.3</code></pre>
+<pre class="r"><code>library(gt)</code></pre>
+<pre><code>## Warning: package &#39;gt&#39; was built under R version 3.6.3</code></pre>
+<pre class="r"><code>library(here)
+library(geepack)</code></pre>
+<pre><code>## Warning: package &#39;geepack&#39; was built under R version 3.6.3</code></pre>
+<pre class="r"><code>library(corrr)</code></pre>
+<pre><code>## Warning: package &#39;corrr&#39; was built under R version 3.6.3</code></pre>
+<pre class="r"><code># Set ggplot2 theme and defaults
+theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = &quot;xy&quot;))
+ggp &lt;- function(...) ggplot(...) +
+  scale_color_brewer(palette = &quot;Set1&quot;) +
+  scale_fill_brewer(palette = &quot;Set1&quot;)</code></pre>
+<div id="an-example-data-set" class="section level2">
+<h2>2. An example data set</h2>
+<p>The <code>respiratory</code> data set:</p>
+<pre class="r"><code>data(respiratory)
+
+glimpse(respiratory)</code></pre>
+<pre><code>## Rows: 444
+## Columns: 8
+## $ center   &lt;int&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1...
+## $ id       &lt;int&gt; 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5...
+## $ treat    &lt;fct&gt; P, P, P, P, P, P, P, P, A, A, A, A, P, P, P, P, P, P, P, P...
+## $ sex      &lt;fct&gt; M, M, M, M, M, M, M, M, M, M, M, M, M, M, M, M, F, F, F, F...
+## $ age      &lt;int&gt; 46, 46, 46, 46, 28, 28, 28, 28, 23, 23, 23, 23, 44, 44, 44...
+## $ baseline &lt;int&gt; 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1...
+## $ visit    &lt;int&gt; 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4...
+## $ outcome  &lt;int&gt; 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1...</code></pre>
+<p>comes from a clinical study of a treatment on patients with respiratory illness.
+A total of 111 patients (<code>id</code>) from 2 clinical centers (<code>center</code>).
+(Note that the <code>id</code> variable is not unique: they are numbered starting from 1 for each <code>center</code>.)</p>
+<p>Patients were randomized to receive either
+placebo (<code>treat</code> = “P”, 51%) or
+active treatment (<code>treat</code> = “A”, 49%).</p>
+<p>At 4 examination <code>visit</code>s, the respiratory state of each patient was classified as good (<code>outcome</code> = 1) or poor (<code>outcome</code> = 0).
+Respiratory state at baseline (same coding as <code>outcome</code>) is recorded in the <code>baseline</code> variable.</p>
+<p>Re-create Table 1:</p>
+<pre class="r"><code>respiratory %&gt;%
+  #select(-sex, -age) %&gt;%
+  pivot_wider(names_from = visit, values_from = outcome) %&gt;%
+  transmute(
+    center, id, baseline, treat,
+    response_pattern = glue::glue(&quot;{`1`}\n\n{`2`}\n\n{`3`}\n\n{`4`}&quot;)
+  ) %&gt;%
+  group_by(baseline, treat, response_pattern) %&gt;%
+  tally() %&gt;%
+  pivot_wider(names_from = response_pattern, values_from = n,
+              values_fill = list(n = 0)) %&gt;%
+  ungroup() %&gt;%
+  gt()</code></pre>
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#wdbbnlfpxb .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#wdbbnlfpxb .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 4px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#wdbbnlfpxb .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#wdbbnlfpxb .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#wdbbnlfpxb .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#wdbbnlfpxb .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#wdbbnlfpxb .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#wdbbnlfpxb .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#wdbbnlfpxb .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#wdbbnlfpxb .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#wdbbnlfpxb .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#wdbbnlfpxb .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#wdbbnlfpxb .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#wdbbnlfpxb .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#wdbbnlfpxb .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#wdbbnlfpxb .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#wdbbnlfpxb .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#wdbbnlfpxb .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#wdbbnlfpxb .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#wdbbnlfpxb .gt_left {
+  text-align: left;
+}
+
+#wdbbnlfpxb .gt_center {
+  text-align: center;
+}
+
+#wdbbnlfpxb .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#wdbbnlfpxb .gt_font_normal {
+  font-weight: normal;
+}
+
+#wdbbnlfpxb .gt_font_bold {
+  font-weight: bold;
+}
+
+#wdbbnlfpxb .gt_font_italic {
+  font-style: italic;
+}
+
+#wdbbnlfpxb .gt_super {
+  font-size: 65%;
+}
+
+#wdbbnlfpxb .gt_footnote_marks {
+  font-style: italic;
+  font-size: 65%;
+}
+</style>
+<div id="wdbbnlfpxb" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">baseline</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">treat</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+0
+
+0
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+0
+
+0
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+0
+
+1
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+1
+
+0
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+1
+
+1
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+1
+
+1
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+0
+
+0
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+0
+
+1
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+1
+
+0
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+1
+
+1
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+1
+
+1
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+0
+
+1
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+1
+
+0
+
+0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1
+
+0
+
+0
+
+1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">0
+
+0
+
+1
+
+1</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">A</td>
+      <td class="gt_row gt_center">7</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">4</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">7</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">P</td>
+      <td class="gt_row gt_center">18</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">3</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">A</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">4</td>
+      <td class="gt_row gt_center">17</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">P</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">4</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">10</td>
+      <td class="gt_row gt_center">2</td>
+      <td class="gt_row gt_center">0</td>
+      <td class="gt_row gt_center">1</td>
+      <td class="gt_row gt_center">3</td>
+    </tr>
+  </tbody>
+  
+  
+</table></div>
+<p>In terms of patient characteristics, we have <code>age</code> in years and <code>sex</code>.
+Re-create Table 2:</p>
+<pre class="r"><code>respiratory %&gt;%
+  group_by(across(c(-visit, -outcome))) %&gt;%
+  summarise(n_good = sum(outcome)) %&gt;%
+  group_by(sex, n_good) %&gt;%
+  tally() %&gt;%
+  pivot_wider(names_from = n_good, values_from = n) %&gt;%
+  mutate(variable = &quot;Sex&quot;, sex = as.character(sex)) %&gt;%
+  rename(value = sex) %&gt;%
+  bind_rows(
+    respiratory %&gt;%
+      group_by(across(c(-visit, -outcome))) %&gt;%
+      summarise(n_good = sum(outcome)) %&gt;%
+      group_by(center, n_good) %&gt;%
+      tally() %&gt;%
+      pivot_wider(names_from = n_good, values_from = n) %&gt;%
+      mutate(variable = &quot;Center&quot;, center = as.character(center)) %&gt;%
+      rename(value = center)
+  ) %&gt;%
+  # From some reason, the column name &quot;0&quot; doesn&#39;t work with gt
+  rename(&quot; 0&quot; = `0`) %&gt;%
+  group_by(variable) %&gt;%
+  gt()</code></pre>
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#bjcigkqonk .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#bjcigkqonk .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 4px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#bjcigkqonk .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#bjcigkqonk .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#bjcigkqonk .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#bjcigkqonk .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#bjcigkqonk .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#bjcigkqonk .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#bjcigkqonk .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#bjcigkqonk .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#bjcigkqonk .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#bjcigkqonk .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#bjcigkqonk .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#bjcigkqonk .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#bjcigkqonk .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#bjcigkqonk .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#bjcigkqonk .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#bjcigkqonk .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#bjcigkqonk .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#bjcigkqonk .gt_left {
+  text-align: left;
+}
+
+#bjcigkqonk .gt_center {
+  text-align: center;
+}
+
+#bjcigkqonk .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#bjcigkqonk .gt_font_normal {
+  font-weight: normal;
+}
+
+#bjcigkqonk .gt_font_bold {
+  font-weight: bold;
+}
+
+#bjcigkqonk .gt_font_italic {
+  font-style: italic;
+}
+
+#bjcigkqonk .gt_super {
+  font-size: 65%;
+}
+
+#bjcigkqonk .gt_footnote_marks {
+  font-style: italic;
+  font-size: 65%;
+}
+</style>
+<div id="bjcigkqonk" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="1" colspan="1">value</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1"> 0</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">2</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">3</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1">4</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr class="gt_group_heading_row">
+      <td colspan="6" class="gt_group_heading">Sex</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">F</td>
+      <td class="gt_row gt_center">7</td>
+      <td class="gt_row gt_center">3</td>
+      <td class="gt_row gt_center">3</td>
+      <td class="gt_row gt_center">3</td>
+      <td class="gt_row gt_center">7</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">M</td>
+      <td class="gt_row gt_center">19</td>
+      <td class="gt_row gt_center">13</td>
+      <td class="gt_row gt_center">9</td>
+      <td class="gt_row gt_center">17</td>
+      <td class="gt_row gt_center">30</td>
+    </tr>
+    <tr class="gt_group_heading_row">
+      <td colspan="6" class="gt_group_heading">Center</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">1</td>
+      <td class="gt_row gt_center">18</td>
+      <td class="gt_row gt_center">9</td>
+      <td class="gt_row gt_center">6</td>
+      <td class="gt_row gt_center">11</td>
+      <td class="gt_row gt_center">12</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">2</td>
+      <td class="gt_row gt_center">8</td>
+      <td class="gt_row gt_center">7</td>
+      <td class="gt_row gt_center">6</td>
+      <td class="gt_row gt_center">9</td>
+      <td class="gt_row gt_center">25</td>
+    </tr>
+  </tbody>
+  
+  
+</table></div>
+<p>Figure 1 displays the relationship between <code>age</code> and the proportion of positive responses (<code>outcome</code> = 1) per patient:</p>
+<pre class="r"><code>respiratory %&gt;%
+  group_by(center, id, age) %&gt;%
+  summarise(prop = mean(outcome)) %&gt;%
+  ggp(aes(x = age, y = prop)) +
+  geom_point(size = 3) +
+  geom_smooth(method = &quot;loess&quot;) +
+  labs(x = &quot;Age&quot;, y = &quot;Proportion of positive responses&quot;) +
+  coord_cartesian(ylim = c(0, 1))</code></pre>
+<p><img src="/post/2020-07-09-learning-generalized-estimating-equations-with-r/index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>Fit a logistic model with a quadratic age term:</p>
+<pre class="r"><code>glm_outcome &lt;-
+  glm(
+    outcome ~ baseline + center + sex + treat + age + I(age^2),
+    data = respiratory, family = binomial
+  )
+summary(glm_outcome)</code></pre>
+<pre><code>## 
+## Call:
+## glm(formula = outcome ~ baseline + center + sex + treat + age + 
+##     I(age^2), family = binomial, data = respiratory)
+## 
+## Deviance Residuals: 
+##     Min       1Q   Median       3Q      Max  
+## -2.5951  -0.9108   0.4034   0.8336   2.0951  
+## 
+## Coefficients:
+##               Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)  3.3579727  1.0285292   3.265   0.0011 ** 
+## baseline     1.8850421  0.2482959   7.592 3.15e-14 ***
+## center       0.5099244  0.2453982   2.078   0.0377 *  
+## sexM        -0.4510595  0.3166570  -1.424   0.1543    
+## treatP      -1.3231587  0.2431603  -5.442 5.28e-08 ***
+## age         -0.2072815  0.0472538  -4.387 1.15e-05 ***
+## I(age^2)     0.0025650  0.0006324   4.056 4.99e-05 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## (Dispersion parameter for binomial family taken to be 1)
+## 
+##     Null deviance: 609.41  on 443  degrees of freedom
+## Residual deviance: 468.62  on 437  degrees of freedom
+## AIC: 482.62
+## 
+## Number of Fisher Scoring iterations: 4</code></pre>
+<p>This simple model excludes any clustering of measurements, which is inappropriate for longitudinal data.
+We can show this by computing correlations of the residuals between visits:</p>
+<pre class="r"><code>broom::augment(
+  glm_outcome,
+  data = respiratory,
+  type.residals = &quot;pearson&quot;
+) %&gt;%
+  select(center, id, visit, .resid) %&gt;%
+  pivot_wider(names_from = visit, values_from = .resid) %&gt;%
+  select(-center, -id) %&gt;%
+  corrr::correlate(method = &quot;pearson&quot;, diagonal = 1) %&gt;%
+  gt() %&gt;%
+  fmt_number(everything(), decimals = 2)</code></pre>
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#miyhyzhfil .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#miyhyzhfil .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 4px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#miyhyzhfil .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#miyhyzhfil .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#miyhyzhfil .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#miyhyzhfil .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#miyhyzhfil .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#miyhyzhfil .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#miyhyzhfil .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#miyhyzhfil .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#miyhyzhfil .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#miyhyzhfil .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#miyhyzhfil .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#miyhyzhfil .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#miyhyzhfil .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#miyhyzhfil .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#miyhyzhfil .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#miyhyzhfil .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#miyhyzhfil .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#miyhyzhfil .gt_left {
+  text-align: left;
+}
+
+#miyhyzhfil .gt_center {
+  text-align: center;
+}
+
+#miyhyzhfil .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#miyhyzhfil .gt_font_normal {
+  font-weight: normal;
+}
+
+#miyhyzhfil .gt_font_bold {
+  font-weight: bold;
+}
+
+#miyhyzhfil .gt_font_italic {
+  font-style: italic;
+}
+
+#miyhyzhfil .gt_super {
+  font-size: 65%;
+}
+
+#miyhyzhfil .gt_footnote_marks {
+  font-style: italic;
+  font-size: 65%;
+}
+</style>
+<div id="miyhyzhfil" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="1" colspan="1"></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">1</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">2</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">3</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">4</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr>
+      <td class="gt_row gt_left gt_stub">1</td>
+      <td class="gt_row gt_right">1.00</td>
+      <td class="gt_row gt_right">0.35</td>
+      <td class="gt_row gt_right">0.22</td>
+      <td class="gt_row gt_right">0.33</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left gt_stub">2</td>
+      <td class="gt_row gt_right">0.35</td>
+      <td class="gt_row gt_right">1.00</td>
+      <td class="gt_row gt_right">0.41</td>
+      <td class="gt_row gt_right">0.36</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left gt_stub">3</td>
+      <td class="gt_row gt_right">0.22</td>
+      <td class="gt_row gt_right">0.41</td>
+      <td class="gt_row gt_right">1.00</td>
+      <td class="gt_row gt_right">0.41</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left gt_stub">4</td>
+      <td class="gt_row gt_right">0.33</td>
+      <td class="gt_row gt_right">0.36</td>
+      <td class="gt_row gt_right">0.41</td>
+      <td class="gt_row gt_right">1.00</td>
+    </tr>
+  </tbody>
+  
+  
+</table></div>
+<p>The numbers here differ slightly from those published – not sure why.
+The message stays the same, however: there is considerable measurement correlation within subjects, that is not being accounted for in the GLM.</p>
+</div>
+<div id="theory-of-gee" class="section level2">
+<h2>3. Theory of GEE</h2>
+<p><span class="citation">(Ziegler, Kastner, and Blettner 1998)</span> to supplement this section.</p>
+<p><span class="citation">(Liang and Zeger 1986)</span> introduced the GEE method of quasi-likelihood estimation for correlated data.</p>
+<p>Consider a sample of <span class="math inline">\(i = 1, \dots, k\)</span> independent multivariate observations <span class="math inline">\(y_i = (y_{i1}, \dots, y_{it}, \dots, y_{in_i})\)</span>.
+For example, a trial of <span class="math inline">\(k\)</span> subjects where a subject <span class="math inline">\(i\)</span> has a cluster of <span class="math inline">\(n_i\)</span> longitudinal observations, and each subjects’ observations are independent of eachother..</p>
+<p>The expectation at a time point <span class="math inline">\(t\)</span> is <span class="math inline">\(E(y_{it}) = \mu_{it}\)</span>, and is related to the <span class="math inline">\(p\)</span>-dimensional vector of covariates (or regressors) <span class="math inline">\(x_{it}\)</span> by the link function <span class="math inline">\(g\)</span>:</p>
+<p><span class="math display">\[
+g(\mu_{it}) = x_{it}^{\intercal} \beta
+\]</span></p>
+<p>where <span class="math inline">\(\beta\)</span> is the parameter vector of interest.</p>
+<p>An important property of the generalized linear model (GLM) is the functional relation between mean and variance:</p>
+<p><span class="math display">\[
+\text{Var}(y_{it} | x_{it}) = \phi a (\mu_{it})
+\]</span></p>
+<p>where <span class="math inline">\(\phi\)</span> is a common scale parameter (also called dispersion parameter) and <span class="math inline">\(a(\mu_{it})\)</span> is a known variance function.
+If a specific exponential family can be assumed, then the variance function is uniquely determined.
+For example:</p>
+<ul>
+<li>Gaussian distribution: constant, <span class="math inline">\(a(\mu_{it}) = \sigma^2\)</span></li>
+<li>Binomial distribution: <span class="math inline">\(a(\mu_{it}) = \mu_{it} (1 - \mu_{it}) = np (1 - np)\)</span></li>
+<li>Poisson distribution: identity <span class="math inline">\(a(\mu_{it}) = \mu_{it}\)</span></li>
+<li>Gamma distribution: squared <span class="math inline">\(a(\mu_{it}) = \mu_{it}^2\)</span></li>
+</ul>
+<p>For independent observations, the parameter vector <span class="math inline">\(\beta\)</span> is estimated using the maximum likelihood (ML) method, where the assumed distribution determines the likelihood equations (or score equations) that are give by derivatives of the log-likelihood function with respect to <span class="math inline">\(\beta\)</span>.
+The likelihood equations – also called <em>independence estimating equations</em> (IEE) – have the form:</p>
+<p><span class="math display">\[
+\begin{align}
+u(\beta) &amp;= \frac{1}{k} \sum_{i=1}^k \frac{\partial \mu_i&#39;}{\partial \beta} V_i^{-1} (y_i - \mu_i) \\
+\end{align}
+\]</span>
+where <span class="math inline">\(V_i\)</span> is the covariance matrix of <span class="math inline">\(y_i\)</span>, and <span class="math inline">\(\partial{\mu_i&#39;}/\partial{\beta}\)</span> is a <span class="math inline">\(p \times n_i\)</span> matrix of partial derivatives of the mean with respect to the regression parameters of the <span class="math inline">\(i\)</span>th subject.</p>
+<p>These equations are solved iteratively in various ways that are easy to compute (not shown here).
+The estimator <span class="math inline">\(\hat{\beta}\)</span> is consistent and asymptotically normally distributed with covariance matrix:</p>
+<p>$$
+<span class="math display">\[\begin{align}
+\hat{V}(\hat{\beta}) &amp;= k \lim_{k \to \infty} \hat{\Sigma}_0^{-1} \hat{\Sigma}_1 \hat{\Sigma}_0^{-1} \\
+&amp;= k \lim_{k \to \infty}
+(\sum_{i=1}^k \frac{\partial \mu_i^{\intercal}}{\partial \beta} V_i^{-1} \frac{\partial \mu_i}{\partial \beta^{\intercal}})
+(\sum_{i=1}^k \frac{\partial \mu_i^{\intercal}}{\partial \beta} V_i^{-1} \text{Cov}(y_i) V_i^{-1} \frac{\partial \mu_i}{\partial \beta^{\intercal}})
+(\sum_{i=1}^k \frac{\partial \mu_i^{\intercal}}{\partial \beta} V_i^{-1} \frac{\partial \mu_i}{\partial \beta^{\intercal}})
+
+\end{align}\]</span>
+$$</p>
+<p>where <span class="math inline">\(\hat{\Sigma}_1 = (y_i \ - \hat{\mu}_i) (y_i - \hat{\mu}_i)&#39;\)</span> is the sandwich estimator of <span class="math inline">\(\Sigma_1\)</span>.
+However, the main disadvantage of this estimation approach is the inefficiency in the presence of large autocorrelation.
+Thus, <em>generalized estimating equations</em> were proposed.</p>
+<p>Consider a GLM with fixed mean structure and variance.
+Let <span class="math inline">\(R (\alpha)\)</span> be a working correlation matrix of <span class="math inline">\(y_i\)</span> completely described by the parameter vector <span class="math inline">\(\alpha\)</span> of length <span class="math inline">\(m\)</span>, that is assumed to be identical for all clusters <span class="math inline">\(i\)</span>.
+Then with the estimate <span class="math inline">\(R(\hat{\alpha}) = \hat{R}\)</span>, the estimator for <span class="math inline">\(\Sigma_1\)</span> is given by</p>
+<p><span class="math display">\[
+\hat{\Sigma}_1 = \phi \hat{A}_i^{1/2} R(\hat{\alpha}) \hat{A}_i^{1/2}
+\]</span></p>
+<p>where <span class="math inline">\(\hat{A}_i^{1/2}\)</span> is the estimated squared root of the diagonal matrix of the variances <span class="math inline">\(v_{it}\)</span>.
+With this estimated working correlation matrix <span class="math inline">\(\hat{R}\)</span>, the GEE have the form:</p>
+<p><span class="math display">\[
+\begin{align}
+u(\beta) &amp;= \frac{1}{k} \sum_{i=1}^k \frac{\partial \mu_i&#39;}{\partial \beta} \hat{\Sigma}_i^{-1} (y_i - \mu_i) \\
+\end{align}
+\]</span></p>
+<p>GEE gives us the first order moments only (i.e. the mean structure estimated consistently).
+The term ‘generalized’ can be misleading – the term Estimating Equations (EE) is preferred to GEE by some.</p>
+<p>There is then the choice of <span class="math inline">\(R(\alpha)\)</span>, which should be chosen carefully for convergence of <span class="math inline">\(\hat{\alpha}\)</span> to <span class="math inline">\(\alpha\)</span>.
+The GEE reduce to IEE if the identify matrix is used as the working correlation, as <span class="math inline">\(R\)</span> reduces to a diagonal matrix of the variances.
+<span class="citation">(Wang 2014)</span> gives a nice summary of common working correlation structures:</p>
+<p><img src="correlation_structures.PNG" /></p>
+<p>If <span class="math inline">\(\beta\)</span> is estimated using GEE, then <span class="math inline">\(\hat{\beta}\)</span> is consistent under suitable regularity conditions, if <span class="math inline">\(\mu_{it} = E(y_{it} | x_{it})\)</span> is specified correctly.</p>
+</div>
+</div>
+<div id="wang2014-data-simulations" class="section level1">
+<h1><span class="citation">Wang (2014)</span> data simulations</h1>
+<p>Two types of data generation are considered, continuous and count responses:</p>
+<p><span class="math display">\[
+\begin{align}
+y_{ij} = \beta_0 + \beta_1 x_{ij} \\
+\log(y_{ij}) = \beta_0 + \beta_1 x_{ij} \\
+\end{align}
+\]</span></p>
+<p>where <span class="math inline">\(\beta_0 = \beta_1 = 0.5\)</span>, <span class="math inline">\(i = 1, 2, \dots, k\)</span> for <span class="math inline">\(k = 50, 100, 200, 500\)</span> and <span class="math inline">\(j = 1, 2, \dots, n\)</span> with <span class="math inline">\(n = 4, 8\)</span>.
+We can think of <span class="math inline">\(i\)</span> as subject and <span class="math inline">\(j\)</span> as time points.
+Note that the cluster size is consistent between subjects here: <span class="math inline">\(n_i = n = 4, 8\)</span>.
+The covariates <span class="math inline">\(x_{ij}\)</span> are independent and identically distributed random variables drawn from a uniform distribution <span class="math inline">\(\text{Unif}(0, 1)\)</span>.
+The data will be generated based on the following underlying true correlation structures: independent, exchangeable and autoregressive with <span class="math inline">\(\alpha = 0.3, 0.7\)</span>.
+1000 datasets are generated for each scenario.</p>
+</div>
+<div id="when-to-use-gee" class="section level1">
+<h1>When to use GEE</h1>
+<ul>
+<li><span class="citation">(Ziegler, Kastner, and Blettner 1998)</span>
+<ul>
+<li>If the number of clusters is at least 30 for a cluster size of about 4 for a low-to-moderate correlation</li>
+<li>For high correlations between observations, more independent clusters are necessary</li>
+<li>The number of required clusters also dependends on the number of explanatory variables: if cluster size is large compared to number of clusters, the GEE are probably not an appropriate analyzing tool. In this situation, random effects models or conditional models might be the better choice.</li>
+<li>When the number of clusters is small, careful modelling of the correlation needs to be done.</li>
+<li>One limitation of the GEE approaches is that the parameter vector <span class="math inline">\(\beta\)</span> has to be constant for all <span class="math inline">\(t\)</span>. GEE can be extended to include a time dependent parameter vector, which is important for longitudinal studies where the influence of the covariates changes with time.</li>
+</ul></li>
+<li><span class="citation">(Wang 2014)</span>
+<ul>
+<li>One feature of GEE is the consistency of parameter estimates can still hold even when the “working” correlation structure is misspecified. But correct specification can definitely enhance the efficiency of the parameter estimates in particular when the sample size is not large enough.</li>
+<li>The application of GEE in clustered data with <em>informative cluster size</em> <span class="math inline">\(n_i\)</span> is a special topic which needs careful treatment.</li>
+</ul></li>
+</ul>
+</div>
+<div id="references" class="section level1 unnumbered">
+<h1>References</h1>
+<div id="refs" class="references hanging-indent">
+<div id="ref-Fong2010">
+<p>Fong, Youyi, Håvard Rue, and Jon Wakefield. 2010. “Bayesian inference for generalized linear mixed models.” <em>Biostatistics</em> 11 (3): 397–412. <a href="https://doi.org/10.1093/biostatistics/kxp053">https://doi.org/10.1093/biostatistics/kxp053</a>.</p>
+</div>
+<div id="ref-Halekoh2006">
+<p>Halekoh, Ulrich, Søren Højsgaard, and Jun Yan. 2006. “The R Package geepack for Generalized Estimating Equations.” <em>Journal of Statistical Software</em> 15 (2): 1–11. <a href="https://doi.org/10.18637/jss.v015.i02">https://doi.org/10.18637/jss.v015.i02</a>.</p>
+</div>
+<div id="ref-Lee2004">
+<p>Lee, Youngjo, and John A. Nelder. 2004. “Conditional and Marginal Models: Another View.” <em>Statistical Science</em> 19 (2): 219–38. <a href="https://doi.org/10.1214/088342304000000305">https://doi.org/10.1214/088342304000000305</a>.</p>
+</div>
+<div id="ref-Liang1986">
+<p>Liang, Kung-Yee, and Scott L. Zeger. 1986. “Longitudinal data analysis using generalized linear models.” <em>Biometrika</em> 73 (1): 13–22. <a href="https://doi.org/10.1093/biomet/73.1.13">https://doi.org/10.1093/biomet/73.1.13</a>.</p>
+</div>
+<div id="ref-Wang2014">
+<p>Wang, Ming. 2014. “Generalized Estimating Equations in Longitudinal Data Analysis: A Review and Recent Developments.” <em>Advances in Statistics</em> 2014: 1–11. <a href="https://doi.org/10.1155/2014/303728">https://doi.org/10.1155/2014/303728</a>.</p>
+</div>
+<div id="ref-Ziegler1998">
+<p>Ziegler, Andreas, Christian Kastner, and Maria Blettner. 1998. “The Generalised Estimating Equations: An Annotated Bibliography.” <em>Biometrical Journal</em> 40 (2): 115–39. <a href="https://doi.org/10.1002/(SICI)1521-4036(199806)40:2%3C115::AID-BIMJ115%3E3.0.CO;2-6">https://doi.org/10.1002/(SICI)1521-4036(199806)40:2&lt;115::AID-BIMJ115&gt;3.0.CO;2-6</a>.</p>
+</div>
+</div>
+</div>
