@@ -40,7 +40,7 @@ $$
 y_{ij} = x_{ij} \beta + \nu_i + e_{ij}
 $$
 
-where $\nu_{i} \sim N(0, \lambda)$ is a random effect and $e_{ij} \sim N(0, \phi)$.
+where $\nu_{i} \sim N(0, \lambda)$ is a random effect and $e_{ij} \sim N(0, \phi)$ is random error.
 And a marginal model
 
 $$
@@ -70,10 +70,12 @@ With the marginal model, we can only obtain the marginal mean $\mu_{ij}$.
 
 ```{r setup, message=F}
 library(tidyverse)
+options(dplyr.summarise.inform = FALSE)
 library(gt)
 library(here)
 library(geepack)
 library(corrr)
+library(gtsummary)
 
 # Set ggplot2 theme and defaults
 theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = "xy"))
@@ -94,7 +96,7 @@ glimpse(respiratory)
 
 comes from a clinical study of a treatment on patients with respiratory illness.
 A total of `r nrow(respiratory %>% distinct(center, id))` patients (`id`) from `r n_distinct(respiratory$center)` clinical centers (`center`).
-(Note that the `id` variable is not unique: they are numbered starting from 1 for each `center`.)
+Note that the `id` variable is not unique: they are numbered starting from 1 for each `center`.
 
 Patients were randomized to receive either
 placebo (`treat` = "P", `r scales::percent(mean(respiratory$treat == "P"))`) or
@@ -107,7 +109,6 @@ Re-create Table 1:
 
 ```{r}
 respiratory %>%
-  #select(-sex, -age) %>%
   pivot_wider(names_from = visit, values_from = outcome) %>%
   transmute(
     center, id, baseline, treat,
@@ -143,10 +144,12 @@ respiratory %>%
       mutate(variable = "Center", center = as.character(center)) %>%
       rename(value = center)
   ) %>%
-  # From some reason, the column name "0" doesn't work with gt
-  rename(" 0" = `0`) %>%
   group_by(variable) %>%
-  gt()
+  gt() %>%
+  tab_spanner(
+    columns = vars(`0`, `1`, `2`, `3` ,`4`),
+    label = "Number of good outcomes (out of 4 visits)"
+  )
 ```
 
 Figure 1 displays the relationship between `age` and the proportion of positive responses (`outcome` = 1) per patient:
@@ -170,7 +173,7 @@ glm_outcome <-
     outcome ~ baseline + center + sex + treat + age + I(age^2),
     data = respiratory, family = binomial
   )
-summary(glm_outcome)
+tbl_regression(glm_outcome)
 ```
 
 This simple model excludes any clustering of measurements, which is inappropriate for longitudinal data.
@@ -192,6 +195,70 @@ broom::augment(
 
 The numbers here differ slightly from those published -- not sure why.
 The message stays the same, however: there is considerable measurement correlation within subjects, that is not being accounted for in the GLM.
+
+Fit the same model but with subject as a random effect:
+
+```{r}
+# We need a unique subject_id for different centers
+respiratory <- respiratory %>%
+  mutate(center_id = str_c(center, "_", id))
+glmer_outcome <-
+  lme4::glmer(
+    outcome ~ baseline + center + sex + treat + age + I(age^2) + (1|center_id),
+    data = respiratory, family = binomial
+  )
+```
+
+We get a warning that the model failed to converge, and that we should consider re-scaling predictor variables.
+The only continuous variable we can re-scale is `age`, which we will adjust to have a mean of 0 and a standard deviation of 1 (for both models):
+
+```{r}
+respiratory <- respiratory %>%
+  mutate(age_z = scale(age))
+# Re-fit this model with scaled age
+glm_outcome <-
+  glm(
+    outcome ~ baseline + center + sex + treat + age_z + I(age_z^2),
+    data = respiratory, family = binomial
+  )
+glmer_outcome <-
+  lme4::glmer(
+    outcome ~ baseline + center + sex + treat + age_z + I(age_z^2) +
+      (1|center_id),
+    data = respiratory, family = binomial
+  )
+
+list(tbl_regression(glm_outcome),
+     tbl_regression(glmer_outcome)) %>%
+  gtsummary::tbl_merge(tab_spanner = c("glm", "glmer"))
+```
+
+While a random effects model is the better choice conceptually compared to the simple fixed effects model, it is still worth comparing them by fit:
+
+```{r}
+anova(glmer_outcome, glm_outcome)
+```
+
+And we can also re-calculate the correlation of the residuals:
+
+```{r message=F, warning=F}
+# augment() returns an error that this calculation doesn't make which, fair
+#  enough, but we're just trying to illustrate a point about clustering
+broom::augment(
+  glmer_outcome,
+  data = respiratory,
+  type.residals = "pearson"
+) %>%
+  select(center, id, visit, .resid) %>%
+  pivot_wider(names_from = visit, values_from = .resid) %>%
+  select(-center, -id) %>%
+  corrr::correlate(method = "pearson", diagonal = 1) %>%
+  gt() %>%
+  fmt_number(everything(), decimals = 2)
+```
+
+
+
 
 ## 3. Theory of GEE
 
