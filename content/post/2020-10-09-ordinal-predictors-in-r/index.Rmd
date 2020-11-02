@@ -1,0 +1,944 @@
+---
+title: Ordinal predictors in R
+author: Taylor Dunn
+date: '2020-10-09'
+slug: ordinal-predictors-in-r
+categories: []
+tags:
+  - tidyverse
+  - bayesian
+  - regression
+  - brms
+  - rstats
+bibliography: references.bib
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(ggtext)
+library(gt)
+library(brms)
+library(broom)
+library(broom.mixed)
+library(gtsummary)
+library(bigsplines)
+
+theme_set(cowplot::theme_cowplot() + cowplot::background_grid(major = "xy"))
+ggp <- function(...) ggplot(...) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+
+With this post, I'll be documenting my learning process on how to model monotonic effects of ordinal predictors in a Bayesian regression framework.
+To do so, I'll be re-producing the example analyses by @Burkner2020 using the R package `brms`.
+
+# Motivation
+
+This post was motivated by analyses required for my work in which I had a model with a categorical predictor that had a plausible monotonic relationship with the outcome.
+My first reaction was to attempt to use integer representations of the levels of the predictor and to try linear or non-linear terms in the model.
+But this felt inappropriate for the problem at hand, particularly because it assumes that the ordinal categories are equidistant.
+Certain online debates in statistical methodology ([logistic vs linear regression on binary outcomes](https://twitter.com/RobinGomila/status/1309865417243086848) for example) have made me more cautious about my assumptions, and this post is an indirect result of that.
+
+# Theory
+
+To better understand the theory, below are my condensed notes of sections 2 and 3 of @Burkner2020.
+
+The $n$th element of the linear predictor term in a generalized linear model (GLM) may be written as:
+
+$$
+\eta_n = \sum^J_{j=1} b_j f_j (X_n)
+$$
+
+* $X_n = (x_{1n}, \dots, x_{Kn})$ are predictor values of the $n$th observation,
+* $f_j$ are transformations of the predictor variables, and
+* $b_j$ are the regression coefficients ($J$ total).
+* An intercept is included as a constant function $f_0 = 1$.
+
+For an ordinal predictor $\bf{x}$, we arbitrarily code the lowest category as 0 and the largest as $D$.
+The monotonic transform:
+
+$$
+\begin{align}
+&\text{mo:} \{0, \dots, D\} \rightarrow [0, D], \\
+&x \rightarrow \text{mo}(x, \bf{\zeta}) = D \sum_{i=1}^x \zeta_i
+\end{align}
+$$
+
+* The vector $\bf{\zeta}$ is a simplex which satisfies:
+    * $\zeta_i \in [0, 1]$ and
+    * $\sum_{i=1}^D \zeta_i = 1$.
+* The elements of $\bf{\zeta}$ are the normalized distances between consecutive predictor categories.
+
+The additive effect of $x_n$ to $\eta_n$, in terms of the GLM formulation:
+
+$$
+b_j f_j (X_n) = b \text{mo}(x_n, \zeta) = b D \sum_{i=1}^{x_n} \zeta_i
+$$
+
+To help interpret the effect of $b$ and $\zeta_i$ in a linear model, we will re-produce Figure 1 which visualizes a monotonic effect with $D + 1 = 4$ predictor categories, $b = 100/3$ and $\bf{\zeta} = (0.6, 0.3, 0.1)$:
+
+```{r fig.height=4, fig.width=5, warning=FALSE}
+D <- 3
+b <- 100 / 3
+
+d <-
+  tibble(
+    x = seq(0, D),
+    # Note that the first value of zeta is 0
+    zeta = c(0, 0.6, 0.3, 0.1)
+  ) %>%
+  mutate(
+    # Change in y at each category
+    dy = b * D * zeta,
+    # Add up the incremental changes between categories
+    y = cumsum(dy)
+  )
+d %>%
+  ggplot(aes(x, y)) +
+  geom_line(size = 2) +
+  annotate(
+    "segment", x = c(0, 1, 2), xend = c(0, 1, 2),
+    y = c(2, 0, 60), yend = c(100, 58, 88),
+    arrow = arrow(ends = "both", type = "closed", length = unit(0.1, "inches"))
+  ) +
+  annotate(
+    "text", x = 0.05, y = 60, label = "bD",
+    size = 7, hjust = "left"
+  ) +
+  # Showing how to add math text two different ways
+  # With ggtext and html syntax
+  annotate(
+    "richtext", x = 1.0, y = 30, label = "bD&zeta;<sub>1</sub>",
+    fill = NA, label.color = NA, size = 7, hjust = "left"
+  ) +
+  # Or with native R symbol parsing
+  annotate(
+    "text", x = 2.05, y = 70, label = "b~D~zeta[2]", parse = T,
+    size = 7, hjust = "left"
+  )
+```
+
+If we are to use a Bayesian framework, then we need to consider the prior distributions for $b$ and $\bf{\zeta}$.
+Priors for $b$ can be thought of as the average difference between adjacent categories.
+We do not need to consider individual differences on adjacent categories since those are handled fully by the simplex parameter $\bf{\zeta}$.
+
+Recall that a valid simplex $\bf{\zeta}$ satisfies: (1) $\zeta_i \in [0, 1]$ and $\sum_{i=1}^D \zeta_i = 1$.
+For these restrictions, the Dirichlet distribution (a multivariate generalization of the Beta family) is a natural choice of prior, with density:
+
+$$
+f(\bf{\zeta}|\bf{\alpha}) = \frac{1}{B(\bf{\alpha})} \prod_{i=1}^D \zeta_i^{\alpha_i - 1}
+$$
+
+where $B(\bf{\alpha}})$ is a normalizing constant.
+The expected prior value of $\zeta_i$ following this distribution is $\alpha_i / \sum \alpha_i$.
+A reasonable assumption for most applications is that all differences between adjacent categories are the same (i.e. a linear trend) but with enough uncertainty to allow for all other possible trends as well.
+
+Below are density distributions (from $10^4$ random samples) for a Dirichlet prior with $\alpha = 1$ and $D = 4$:
+
+```{r message=FALSE, warning=FALSE}
+brms::rdirichlet(n = 1e4, rep(1, 4)) %>%
+  as_tibble(.name_repair = "unique") %>%
+  pivot_longer(everything()) %>%
+  transmute(
+    zeta_index = str_remove(name, "...") %>% as.integer(),
+    zeta_index = zeta_index - 1,
+    zeta_label = str_c("&zeta;<sub>", zeta_index, "</sub>"),
+    zeta = value
+  ) %>%
+  group_by(zeta_index) %>%
+  mutate(mean_zeta = mean(zeta)) %>%
+  ungroup() %>%
+  ggplot(aes(x = zeta)) +
+  geom_density(size = 1) +
+  facet_wrap(~zeta_label) +
+  geom_vline(aes(xintercept = mean_zeta), lty = 1, size = 1, color = "firebrick") +
+  geom_vline(xintercept = 0.25, lty = 2, color = "lightblue", size = 1) +
+  scale_y_continuous("Density", breaks = NULL, expand = c(0, 0)) +
+  theme(strip.text = element_markdown(), axis.title.x = element_markdown()) +
+  labs(x = "&zeta; value")
+```
+The dotted blue line above indicates the expected value of $1 / \sum^4_1 1 = 0.25$, which corresponds well to the simulated mean value (the red line above).
+
+# Simulation example
+
+## Parameter recovery
+
+
+To illustrate the ability of the model to recover simulated parameters, I will follow along with the simulation example presented in section 4.1 of @Burkner2020.
+Consider a normally distributed response $y$ with mean $\mu$ and standard deviation $\sigma$.
+We consider $\mu$ varying from (1) a single monotonic predictor $x$ or (2) two monotonic predictors $x$ and $z$ plus their interaction:
+
+$$
+\begin{align}
+y &\sim \text{Normal}(\mu, \sigma) \\
+\text{(1)  } \mu &= b_0 + b_1 \text{mo}(x, \zeta_x) \\
+\text{(2)  } \mu &= b_0 + b_1 \text{mo}(x, \zeta_1) + b_2 \text{mo}(z, \zeta_2) + b_3 \text{mo}(x, \zeta_{31}) \text{mo}(z, \zeta_{32}))
+\end{align}
+$$
+
+Simulation parameters and model specifics:
+
+* Number of monotonic predictor categories: $D = 4, 11, 51$.
+* Values of $x$ and $z$: sampled uniformly from all $D$ possible categories.
+* Number of observations: $N = 50, 200, 1000$.
+* Priors:
+    * all regression coefficients $b$: $\text{Normal}(0, 1)$,
+    * all simplexes $\zeta_i$: uniform Dirichlet distributions of dimension $D$, and
+    * residual standard deviation $\sigma$: truncated $\text{Normal}_+(0, 1)$.
+* Regression coefficients were scaled to ensure comparability across different $D$: $b_1$ and $b_2$ divided by $D$, and $b_3$ divided by $D^2$.
+* Models fitted via `brms` using 500 warm-up draws and 500 draws from the posterior from a single Markov chain.
+
+This gives 2 x 3 x 3 = 18 conditions.
+I'll just attempt to recreate just Figure 3 in the paper, which correspond to one monotonic predictor $x$ with $N = 200$ and $D = 4$.
+
+Make a function for a single trial:
+
+```{r}
+simulate_one_mo <- function(D, N, seed) {
+  set.seed(seed)
+  
+  # Simulation parameters
+  alpha <- rep(1, D)
+  b0 <- rnorm(n = 1, mean = 0, sd = 1)
+  b1 <- rnorm(n = 1, mean = 0, sd = 1) / D
+  zeta <- as.vector(rdirichlet(n = 1, alpha = alpha))
+  sigma <- abs(rnorm(n = 1, mean = 0, sd = 1))
+  
+  out <- list(truth = list())
+  out$truth <- list(alpha = alpha, b0 = b0, b1 = b1, zeta = zeta, sigma = sigma)
+  
+  # Simulated data
+  sim_data <- 
+    tibble(x = sample(0:D, size = N, replace = T)) %>%
+    # For each category from the monotonic predictor, transform it using the
+    #  the simplexes and regression coefficient
+    mutate(
+      mo_x = ifelse(
+        x == 0, 0,
+        map_dbl(x, ~sum(zeta[1:.]) * length(zeta))
+      )
+    ) %>%
+    # Compute the linear predictor term \eta using the simulated coefficients
+    mutate(
+      eta = b0 + b1 * mo_x
+    ) %>%
+    # Finally compute the response variable y
+    mutate(
+      y = rnorm(n = N, mean = eta, sd = sigma) 
+    )
+  
+  out$sim_data <- sim_data
+  
+  return(out)
+}
+  
+sim_out <- simulate_one_mo(D = 4, N = 200, seed = 12)
+```
+
+Our random parameter values were:
+
+* $b_0$ = `r sim_out$truth$b0`.
+* $b_1$ = `r sim_out$truth$b1`.
+* $\bf{zeta}$ = `r sim_out$truth$zeta`.
+* $\sigma$ = `r sim_out$truth$sigma`.
+
+And we can show the resulting data by plotting $y$ versus category of $x$:
+
+```{r fig.height=3, fig.width=5}
+sim_out$sim_data %>%
+  ggplot(aes(y = factor(x), x = y)) +
+  geom_boxplot() +
+  cowplot::background_grid(major = "x")
+```
+
+Note that this particular example exhibits negative monotonicity, which was expected from $b_1 < 0$.
+
+Now fit the model in `brms` and compare the estimates to the truth:
+
+```{r}
+brm_y_mox <-
+  brm(
+    formula = y ~ 1 + mo(x),
+    prior = c(prior(normal(0, 1), class = "Intercept"),
+              prior(normal(0, 1), class = "b")),
+    data = sim_out$sim_data,
+    warmup = 500, iter = 1000, chains = 1,
+    file = "brm_y_mox.rds"
+  )
+```
+
+Visualize model estimates compared to the true simulated values:
+
+```{r fig.width=5, fig.height=3 ,warning=FALSE}
+broom.mixed::tidyMCMC(brm_y_mox, conf.int = T) %>%
+  left_join(
+    tribble(
+      ~term, ~math_term, ~truth,
+      "b_Intercept", "b<sub>0</sub>", sim_out$truth$b0,
+      "bsp_mox", "b<sub>1</sub>", sim_out$truth$b1,
+      "sigma", "&sigma;", sim_out$truth$sigma,
+      "simo_mox1[1]", "&zeta;<sub>1</sub>", sim_out$truth$zeta[1],
+      "simo_mox1[2]", "&zeta;<sub>2</sub>", sim_out$truth$zeta[2],
+      "simo_mox1[3]", "&zeta;<sub>3</sub>", sim_out$truth$zeta[3],
+      "simo_mox1[4]", "&zeta;<sub>4</sub>", sim_out$truth$zeta[4]
+    ),
+    by = "term"
+  ) %>%
+  ggplot(aes(y = math_term)) +
+  geom_pointrange(aes(x = estimate, xmin = conf.low, xmax = conf.high)) +
+  geom_point(aes(x = truth), color = "firebrick", size = 2) +
+  theme(axis.text.y = element_markdown(), plot.title = element_markdown()) +
+  cowplot::background_grid(major = "x") +
+  labs(
+    title = "Models estimates (95% CI) and <span style = 'color:firebrick;'>true values</span>",
+    x = NULL, y = NULL
+  )
+```
+
+Not bad, but we're looking for long-run consistency and this was just a one-off.
+We repeat the above steps multiple times.
+We will use $T = 1000$ repetitions, same as the paper:
+
+```{r}
+n_sim <- 1000
+# To avoid re-compiling the Stan program every time, we create a "dummy model"
+#  with pre-specified formula and priors, and simply re-fit it to each set
+#  of simulated data.
+dummy_model <- brm(
+  formula = y ~ 1 + mo(x),
+  # Dummy data with all y equal
+  data = data.frame(x = sample(0:4, size = 200, replace = T), y = 1),
+  family = brmsfamily("gaussian"),
+  prior = c(prior(normal(0, 1), class = "Intercept"),
+            prior(normal(0, 1), class = "b")),
+  chains = 0
+)
+
+if (file.exists("sim_D4_N200_T1000.rds")) {
+  sim_D4_N200_T1000 <- read_rds("sim_D4_N200_T1000.rds")
+} else {
+  
+  sim_D4_N200_T1000 <-
+    tibble(D = 4, N = 200, sim = 1:n_sim) %>%
+    mutate(
+      sim_out = pmap(
+        list(D, N, sim),
+        ~simulate_one_mo(D = ..1, N = ..2, seed = ..3)
+      )
+    )
+
+  sim_D4_N200_T1000 <- sim_D4_N200_T1000 %>%
+    mutate(
+      fit = map(
+        sim_out,
+        ~update(
+          dummy_model, newdata = .$sim_data, recompile = FALSE,
+          warmup = 500, iter = 1000, chains = 1, refresh = 0
+        )
+      )
+    )
+  
+  write_rds(sim_D4_N200_T1000, "sim_D4_N200_T1000.rds")
+}
+```
+
+To verify the model, we employ simulation-based calibration (SBC) which involves computing rank statistics of posterior samples compared to the ground truth.
+More details can be found in @Talts2018.
+
+```{r}
+# Calculate rank values for each parameter
+sim_D4_N200_T1000_ranks <-
+  sim_D4_N200_T1000 %>%
+  transmute(
+    D, N, sim,
+    post = map(fit, posterior_samples),
+    rank = map2(
+      sim_out, post,
+      function(sim_out, post) {
+        # Use the naming used by the model
+        tribble(
+          ~param, ~true_value,
+          "b_Intercept", sim_out$truth$b0,
+          "bsp_mox", sim_out$truth$b1,
+          "sigma", sim_out$truth$sigma,
+          "simo_mox1[1]", sim_out$truth$zeta[1],
+          "simo_mox1[2]", sim_out$truth$zeta[2],
+          "simo_mox1[3]", sim_out$truth$zeta[3],
+          "simo_mox1[4]", sim_out$truth$zeta[4]
+        ) %>%
+          left_join(
+            post %>%
+              pivot_longer(everything(),
+                           names_to = "param", values_to = "sample"),
+            by = "param"
+          ) %>%
+          group_by(param) %>%
+          summarise(rank = sum(sample < true_value), .groups = "drop")
+      }
+    )
+  ) %>%
+  unnest(rank)
+```
+
+Before plotting the histograms, these are the median and range of rank by parameter:
+
+```{r}
+sim_D4_N200_T1000_ranks %>%
+  select(param, rank) %>%
+  gtsummary::tbl_summary(
+    by = param,
+    label = list(rank ~ "Ranks"),
+    statistic = list(all_continuous() ~ "{median} ({p0}-{p100})")
+  )
+```
+
+For each parameter, the median rank is around ~250 and ranges from 0-500.
+This is expected because we have $L = 500$ posterior samples from each of the $T = 1000 (= N)$ replications.
+Now if we plot the histogram of rank statistics with $L + 1$ bins:
+
+```{r}
+sim_D4_N200_T1000_ranks %>%
+  ggplot(aes(rank)) +
+  facet_wrap(~param, ncol = 4) +
+  geom_histogram(bins = 501) +
+  labs(x = "Rank", y = "Count") +
+  scale_y_continuous(expand = c(0, 0), breaks = c(0, 5, 10)) +
+  scale_x_continuous(breaks = c(0, 250, 500)) +
+  cowplot::background_grid(major = "y")
+```
+
+This is a very noisy visualization, and not easily interpretable.
+The solution to reduce the noise, as per @Talts2018, is to uniformly bin the histogram, e.g. by pairing neighboring ranks into a single bin to give $B = L/2$ total bins.
+The authors suggest $T / B \approx 20$ is a good first choice, which would give $B \approx 50$:
+
+```{r}
+B <- 51
+L <- 500
+mult_fact <- (B - 1) / L
+lb <- qbinom(0.005, 1000, 1 / B)
+ub <- qbinom(0.995, 1000, 1 / B)
+
+sim_D4_N200_T1000_ranks %>%
+  mutate(rank_scaled = rank * mult_fact) %>%
+  ggplot(aes(rank_scaled)) +
+  geom_histogram(breaks = seq(0, B - 1, 1), color = "white") +
+  facet_wrap(~param, ncol = 4) +
+  geom_hline(yintercept = lb, size = 1) +
+  geom_hline(yintercept = ub, size = 1) +
+  labs(x = "Rank statistics (binned)") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 35))
+```
+
+This passes the eye test for SBC: we expect about 1 of the histogram bins out of 100 to deviate outside the 99% expected variation for $\text{Binomial}(T, (L+1)^{-1})$.
+It looks quite different from @Burkner2020 however, who used $B = 11$:
+
+```{r}
+B <- 11
+L <- 500
+mult_fact <- (B - 1) / L
+lb <- qbinom(0.005, 1000, 1 / B)
+ub <- qbinom(0.995, 1000, 1 / B)
+
+sim_D4_N200_T1000_ranks <- sim_D4_N200_T1000_ranks %>%
+  mutate(rank_scaled = rank * mult_fact)
+
+sim_D4_N200_T1000_ranks %>%
+  ggplot(aes(rank_scaled)) +
+  geom_histogram(breaks = seq(0, B - 1, 1), color = "white") +
+  facet_wrap(~param, ncol = 4) +
+  geom_hline(yintercept = lb, size = 1) +
+  geom_hline(yintercept = ub, size = 1) +
+  labs(x = "Rank statistics (binned)") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(0, 10, 2))
+```
+
+That looks better, though there are more counts outside the 99% interval than I would have expected.
+
+## Comparison to other approaches
+
+To illustrate predictive performance of monotonic predictor models, we use the same simulation conditions as before, but vary the simplex values in three ways:
+
+* A linear relationship: simplex values fixed to $1/D$.
+* A nonlinear monontonic relationship: simplex values from uniform Dirichlet distribution of dimension $D$.
+* A nonlinear non-monontonic relationship: simplex values from uniform Dirichlet distribution of dimension $D$ with half of the values having a negative sign.
+
+Make a function that allows for these variations:
+
+```{r}
+simulate_one_mo_simplex <- function(D, N, seed, simplex = "monotonic") {
+  set.seed(seed)
+  
+  # Simulation parameters
+  alpha <- rep(1, D)
+  b0 <- rnorm(n = 1, mean = 0, sd = 1)
+  b1 <- rnorm(n = 1, mean = 0, sd = 1) / D
+  sigma <- abs(rnorm(n = 1, mean = 0, sd = 1))
+  
+  if (simplex == "monotonic") {
+    zeta <- as.vector(rdirichlet(n = 1, alpha = alpha)) # random monotonic
+  } else if (simplex == "linear") {
+    zeta <- alpha / sum(alpha) # equal distance between categories
+  } else if (simplex == "non-monotonic") {
+    zeta <- as.vector(rdirichlet(n = 1, alpha = alpha)) # random monotonic
+    # Invert the signs of half of the simplex parameters
+    len <- length(zeta)
+    signs <- c(rep(1, ceiling(len / 2)), rep(-1, floor(len / 2)))
+    zeta <- zeta * signs[sample(seq_len(len))]
+  }
+  
+  out <- list(truth = list())
+  out$truth <- list(alpha = alpha, b0 = b0, b1 = b1, zeta = zeta, sigma = sigma)
+  
+  # Simulated data
+  sim_data <- 
+    tibble(x = sample(0:D, size = N, replace = T),
+           # Used for the categorical model
+           xf = factor(x)) %>%
+    # For each category from the monotonic predictor, transform it using the
+    #  the simplexes and regression coefficient
+    mutate(
+      mo_x = ifelse(
+        x == 0, 0,
+        map_dbl(x, ~sum(zeta[1:.]) * length(zeta))
+      )
+    ) %>%
+    # Compute the linear predictor term \eta using the simulated coefficients
+    mutate(
+      eta = b0 + b1 * mo_x
+    ) %>%
+    # Finally compute the response variable y
+    mutate(
+      y = rnorm(n = N, mean = eta, sd = sigma) 
+    )
+  
+  out$sim_data <- sim_data
+  
+  return(out)
+}
+```
+
+And visualize a single simulation of each (with every other parameter the same):
+
+```{r warning=FALSE, message=FALSE, fig.height=4, fig.width=5}
+sim_out <-
+  tibble(D = 4, N = 200,
+         # Keeping the seed the same will keep the other random params constant
+         seed = 48,
+         simplex = c("monotonic", "linear", "non-monotonic")) %>%
+  mutate(
+    out = pmap(
+      list(D, N, seed, simplex),
+      simulate_one_mo_simplex 
+    )
+  )
+sim_out %>%
+  mutate(data = map(out, "sim_data")) %>%
+  select(simplex, data) %>%
+  unnest(data) %>%
+  ggplot(aes(y = factor(x), x = y)) +
+  geom_boxplot() +
+  facet_wrap(~simplex, nrow = 1) +
+  cowplot::background_grid(major = "x")
+```
+
+
+```{r eval=FALSE, include=FALSE}
+### Debug
+###Can I re-create these RMSE values?
+comp_preds <- read_rds("paper_files/comp_preds.rds")
+comp_preds %>%
+  filter(D == 4, nobs == 200, pred == "main", effect == "lin") %>%
+  filter(trial == 24)
+  # ggplot(aes(x = model, y = rmse)) +
+  # geom_boxplot()
+source("paper_files/sims_comp_run.R")
+
+comp_results <- expand.grid(
+  ntrials = 1000,
+  D = 4,
+  ndraws = 500,
+  nobs = 200,
+  likelihood = "gaussian",
+  effect = c("lin"),
+  pred = c("main"),
+  stringsAsFactors = FALSE
+)
+comp_results$cond <- seq_len(nrow(comp_results))
+comp_results$res <- list(list())
+I <- seq_len(nrow(comp_results))
+I <- intersect(I, which(!lengths(comp_results$res)))
+
+#for (i in I) {
+i <- 1
+# Simulation condition 1
+cond <- comp_results[i, ]
+
+dummy_model <- brm(
+  formula = y ~ 1 + mo(x),
+  # Dummy data with all y equal
+  data = data.frame(x = sample(0:4, size = 200, replace = T), y = 1),
+  family = brmsfamily("gaussian"),
+  # Very wide prior on the fixed effect
+  prior = c(prior(normal(0, 10), class = "b")),
+  chains = 0
+)
+
+dummy_models <- list(lin = NULL, mo = NULL, cat = NULL)
+dummy_models[["mo"]] <- dummy_model
+J <- seq_len(cond$ntrials)
+
+# for (j in J)
+j <- 1
+trial_results <- run_trial(cond, dummy_models, seed = j)
+trial_results$data
+trial_results_fit <- 
+  trial_results$data %>%
+  select(x, xf, eta, y) %>%
+  nest(data = everything()) %>%
+  mutate(simplex = "linear") %>%
+  crossing(model = c("MO", "LIN", "CAT", "ISO", "OS", "OSMO", "LS", "CS")) %>%
+  mutate(
+    rmse = map2_dbl(
+      data, model,
+      function(data, model) {
+        
+        # set knots for spline models
+        knotid <- binsamp(data$x, nmbin = n_distinct(data$x)) 
+        
+        # Set sign for isotonoic (ISO) and ordinal regression with monotonicity
+        #  (OSMO) models
+        # Both isoreg and bigsplines::ordspline assume monotonically
+        #  increasing by default so we have to change signs if negative
+        # If the average value of y is higher at the lowest x value, then we
+        #  know that is should be negative
+        x <- data$x
+        y <- data$y
+        is_neg <- mean(y[x == min(x)]) > mean(y[x == max(x)])
+        sign <- if (is_neg) -1 else 1 
+        
+        if (model == "MO") {
+          fit <- update(
+            dummy_model, newdata = data, recompile = FALSE,
+            warmup = 500, iter = 1000, chains = 1, refresh = 0
+          )
+          y_pred <- fitted(fit)[,1]
+        } else if (model == "LIN") {
+          fit <- lm(y ~ x, data = data) 
+          y_pred <- fitted(fit)
+        } else if (model == "CAT") {
+          fit <- lm(y ~ xf, data = data) 
+          y_pred <- fitted(fit)
+        } else if (model == "ISO") {
+          fit <- isoreg(x = x, y = sign * y)
+          y_pred <- sign * fitted(fit)
+        } else if (model == "OS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "ord"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          y_pred <- fitted(fit)
+        } else if (model == "OSMO") {
+          fit <- ordspline(x = x, y = sign * y,
+                           monotone = TRUE, knots = unique(x))
+          y_pred <- sign * fitted(fit)
+        } else if (model == "LS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "lin"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          y_pred <- fitted(fit)
+        } else if (model == "CS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "cub"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          y_pred <- fitted(fit)
+        }
+        
+        rmse <- sqrt(mean((data$y - y_pred)^2))
+        
+        return(rmse)
+      }
+    )
+  )
+```
+
+And the simulated parameter values:
+
+```{r warning=FALSE}
+sim_out %>%
+  mutate(truth = map(out, "truth")) %>%
+  mutate(
+    param = map(truth, names),
+  ) %>%
+  select(simplex, truth, param) %>%
+  unnest(c(param, truth)) %>%
+  mutate(truth = map_chr(truth, ~str_c(round(., 2), collapse = ", "))) %>%
+  pivot_wider(names_from = simplex, values_from = truth) %>%
+  gt() %>%
+  tab_spanner(label = "Simplex variation",
+              columns = c("monotonic", "linear", "non-monotonic"))
+```
+
+We will fit each set of simulated data to the following models and get the root mean square error to compare performance:
+
+* MO: monontic model, fitted with `brms` using default priors.
+* LIN and CAT: simple linear and categorical models, fitted with `lm`.
+* ISO: isotonic regression, fitted with `isoreg`.
+* OS, OSMO, LS and CS: penalized ordinal regression, penalized ordinal regression with monotonicity constraint, linear and cubic spline models, fitted with `bigsplines`.
+
+```{r}
+# To avoid re-compiling the Stan program every time, we create a "dummy model"
+#  with pre-specified formula and priors, and simply re-fit it to each set
+#  of simulated data.
+# Again we use a dummy model to avoid re-compiling for each simulation, but
+#  using bad/default priors so as not to give brms an advantage of the others
+dummy_model <- brm(
+  formula = y ~ 1 + mo(x),
+  # Dummy data with all y equal
+  data = data.frame(x = sample(0:4, size = 200, replace = T), y = 1),
+  family = brmsfamily("gaussian"),
+  # Very wide prior on the fixed effect
+  prior = c(prior(normal(0, 10), class = "b")),
+  chains = 0
+)
+
+sim_out_rmse <-
+  sim_out %>%
+  transmute(
+    simplex,
+    truth = map(out, "truth"),
+    data = map(out, "sim_data")
+  ) %>%
+  crossing(model = c("MO", "LIN", "CAT", "ISO", "OS", "OSMO", "LS", "CS")) %>%
+  mutate(
+    rmse = map2_dbl(
+      data, model,
+      function(data, model) {
+        
+        # set knots for spline models
+        knotid <- binsamp(data$x, nmbin = n_distinct(data$x)) 
+        
+        # Set sign for isotonoic (ISO) and ordinal regression with monotonicity
+        #  (OSMO) models
+        # Both isoreg and bigsplines::ordspline assume monotonically
+        #  increasing by default so we have to change signs if negative
+        # If the average value of y is higher at the lowest x value, then we
+        #  know that is should be negative
+        x <- data$x
+        y <- data$y
+        is_neg <- mean(y[x == min(x)]) > mean(y[x == max(x)])
+        sign <- if (is_neg) -1 else 1 
+        
+        if (model == "MO") {
+          fit <- update(
+            dummy_model, newdata = data, recompile = FALSE,
+            warmup = 500, iter = 1000, chains = 1, refresh = 0
+          )
+          eta_pred <- fitted(fit)[,1]
+        } else if (model == "LIN") {
+          fit <- lm(y ~ x, data = data) 
+          eta_pred <- fitted(fit)
+        } else if (model == "CAT") {
+          fit <- lm(y ~ xf, data = data) 
+          eta_pred <- fitted(fit)
+        } else if (model == "ISO") {
+          fit <- isoreg(x = x, y = sign * y)
+          eta_pred <- sign * fitted(fit)
+        } else if (model == "OS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "ord"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          eta_pred <- fitted(fit)
+        } else if (model == "OSMO") {
+          fit <- ordspline(x = x, y = sign * y,
+                           monotone = TRUE, knots = unique(x))
+          eta_pred <- sign * fitted(fit)
+        } else if (model == "LS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "lin"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          eta_pred <- fitted(fit)
+        } else if (model == "CS") {
+          fit <- bigssp(y ~ x, data = data, type = c(x = "cub"),
+                        nknots = knotid, skip.iter = TRUE, rseed = NULL)
+          eta_pred <- fitted(fit)
+        }
+        
+        rmse <- sqrt(mean((data$eta - eta_pred)^2))
+        
+        return(rmse)
+      }
+    )
+  )
+sim_out_rmse %>%
+  select(simplex, model, rmse) %>%
+  pivot_wider(names_from = model, values_from = rmse) %>%
+  gt() %>%
+  fmt_number(columns = 2:9, decimals = 3) %>%
+  data_color(
+    columns = 2:9,
+    colors = scales::col_numeric(
+      palette = c("cyan", "firebrick"),
+      domain = c(0.08, 0.6)
+    )
+  )
+```
+
+For the linear simulated data, the simple linear model performed best.
+When monotonic or non-monotonic, the cubic spline model performed best.
+
+We again use $T = 1000$ repetitions, for $D = 4$ and $N = 200$:
+
+```{r}
+n_sim <- 1000
+
+if (file.exists("sim_D4_N200_T1000_model_comp.rds")) {
+  sim_D4_N200_T1000_model_comp <- read_rds("sim_D4_N200_T1000_model_comp.rds")
+} else {
+  sim_D4_N200_T1000_model_comp <-
+    tibble(D = 4, N = 200, sim = 1:n_sim) %>%
+    crossing(simplex = c("monotonic", "linear", "non-monotonic")) %>%
+    mutate(
+      out = pmap(
+        list(D, N, sim, simplex),
+        ~simulate_one_mo_simplex(D = ..1, N = ..2, seed = ..3, simplex = ..4)
+      )
+    )
+  sim_D4_N200_T1000_model_comp <-
+    sim_D4_N200_T1000_model_comp %>%
+    transmute(
+      D, N, sim, simplex,
+      truth = map(out, "truth"),
+      data = map(out, "sim_data")
+    ) %>%
+    crossing(model = c("MO", "LIN", "CAT", "ISO", "OS", "OSMO", "LS", "CS")) %>%
+    mutate(
+      fit_rmse = map2_dbl(
+        data, model,
+        function(data, model) {
+          
+          # set knots for spline models
+          knotid <- binsamp(data$x, nmbin = n_distinct(data$x)) 
+          
+          # Set sign for isotonoic (ISO) and ordinal regression with monotonicity
+          #  (OSMO) models
+          x <- data$x
+          y <- data$y
+          is_neg <- mean(y[x == min(x)]) > mean(y[x == max(x)])
+          sign <- if (is_neg) -1 else 1 
+          
+          if (model == "MO") {
+            fit <- update(
+              dummy_model, newdata = data, recompile = FALSE,
+              warmup = 500, iter = 1000, chains = 1, refresh = 0
+            )
+            eta_pred <- fitted(fit)[,1]
+          } else if (model == "LIN") {
+            fit <- lm(y ~ x, data = data) 
+            eta_pred <- fitted(fit)
+          } else if (model == "CAT") {
+            fit <- lm(y ~ xf, data = data) 
+            eta_pred <- fitted(fit)
+          } else if (model == "ISO") {
+            fit <- isoreg(x = x, y = sign * y)
+            eta_pred <- sign * fitted(fit)
+          } else if (model == "OS") {
+            fit <- bigssp(y ~ x, data = data, type = c(x = "ord"),
+                          nknots = knotid, skip.iter = TRUE, rseed = NULL)
+            eta_pred <- fitted(fit)
+          } else if (model == "OSMO") {
+            fit <- ordspline(x = x, y = sign * y,
+                             monotone = TRUE, knots = unique(x))
+            eta_pred <- sign * fitted(fit)
+          } else if (model == "LS") {
+            fit <- bigssp(y ~ x, data = data, type = c(x = "lin"),
+                          nknots = knotid, skip.iter = TRUE, rseed = NULL)
+            eta_pred <- fitted(fit)
+          } else if (model == "CS") {
+            fit <- bigssp(y ~ x, data = data, type = c(x = "cub"),
+                          nknots = knotid, skip.iter = TRUE, rseed = NULL)
+            eta_pred <- fitted(fit)
+          }
+          
+          rmse <- sqrt(mean((data$eta - eta_pred)^2))
+          
+          return(rmse)
+        }
+      )
+    )
+  write_rds(sim_D4_N200_T1000_model_comp,
+            "sim_D4_N200_T1000_model_comp.rds")
+}
+```
+
+(This took about 90 minutes to run.)
+Plot the RMSE values by model (1000 points per model) for each of the simplex variants: linear (corresponding to the top middle subplot of Figure 7), monotonic (top middle of Figure 8) and non-monotonic (top middle of Figure B1):
+
+```{r fig.width=8}
+sim_D4_N200_T1000_model_comp %>%
+  ggplot(aes(y = model, x = fit_rmse)) +
+  geom_boxplot() +
+  facet_wrap(~simplex, nrow = 1, scales = "free_x") +
+  labs(x = "RMSE", y = NULL) +
+  cowplot::background_grid(major = "x") +
+  cowplot::panel_border()
+```
+
+The differences aren't drastic, but the linear model (LIN) looks to be the best option for linear data, but one of the worst for monotonic or non-monotonic.
+The monotonic effects model (MO) performed great under linearity and monotonicity, but poorly under non-monotonicity.
+To my eye, the cubic spline model (CS) performed best overall.
+
+## Case study
+
+```{r}
+data(ICFCoreSetCWP, package = "ordPens")
+cwp <- as_tibble(ICFCoreSetCWP)
+glimpse(cwp)
+```
+
+For each of `r nrow(cwp)` patients (rows of the data), we have information of `r ncol(cwp) - 1` chronic widespread pain (CWP) measures, which we will compare to subject physical health `phcs` as measured by the SF-36 questionnaire.
+The distribution of `phcs`:
+
+```{r fig.height=2, fig.width=5}
+cwp %>%
+  ggplot(aes(x = phcs, y = 1)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0, 0)) +
+  theme(axis.line.y = element_blank())
+```
+
+In @Burkner2020, they predict `phcs` by impairments in walking (`d450`) and 'moving around' (`d455`):
+
+```{r}
+cwp %>%
+  ggplot(aes(x = d450)) +
+  geom_bar() +
+  labs(subtitle = "walking (d450)") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(NULL, breaks = NULL, expand = c(0, 0)) +
+  (
+    cwp %>%
+      ggplot(aes(y = factor(d455))) +
+      geom_bar() +
+      labs(subtitle = "moving around (d455)") +
+      scale_x_continuous(expand = c(0, 0)) +
+      scale_y_discrete(NULL, breaks = NULL)
+  ) +
+  (
+    cwp %>%
+      count(d450, d455, .drop = FALSE) %>%
+      ggplot(aes(x = factor(d450), y = factor(d455))) +
+      geom_tile(aes(fill = n)) +
+      geom_text(aes(label = n), color = "white") +
+      theme(legend.position = "none") +
+      scale_x_discrete(NULL, expand = c(0, 0)) +
+      scale_y_discrete(NULL, expand = c(0, 0))
+  ) +
+  plot_layout(
+    design = "
+    1#
+    32
+    "
+  )
+```
+
+Both can range from 0 ('no problem') to 4 ('complete problem'), although `d450` is 0-3 only in this data.
+
+
+# References
